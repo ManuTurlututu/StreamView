@@ -1,0 +1,286 @@
+body {
+  font-family: Arial, sans-serif;
+  background-color: #000000;
+  margin: 0;
+  padding: 20px;
+}
+.container {
+  max-width: 400px;
+  margin: 0 auto;
+  background-color: #18181b;
+  border-radius: 8px;
+  padding: 10px;
+}
+.tabs {
+  display: flex;
+  justify-content: flex-start;
+  gap: 5px;
+  border-bottom: 1px solid #a970ff;
+  margin-bottom: 10px;
+  position: relative;
+}
+.tab {
+  flex: none;
+  padding: 7px 10px;
+  text-align: center;
+  background-color: #202024;
+  color: #efeff1;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+  font-size: 16px;
+  border-radius: 4px 4px 0 0;
+  min-width: 5px;
+}
+.tab:hover {
+  background-color: #2a2a2e;
+}
+.tab.active {
+  background-color: #a970ff;
+  color: #18181b;
+  font-weight: bold;
+}
+.tab img {
+  width: 20px;
+  height: 15px;
+  vertical-align: middle;
+  margin-right: 5px;
+  margin-top: -2px;
+}
+.tab img.twitch-icon {
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+  margin-top: -2px;
+}
+.tab svg.settings-icon {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+  fill: #efeff1;
+}
+.tab.active svg.settings-icon {
+  fill: #18181b;
+}
+.tab-content {
+  display: none;
+}
+.tab-content.active {
+  display: block;
+}
+.side-nav-card,
+.follow-card,
+.notification-card,
+.yt-sub-card {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  margin-bottom: 10px;
+  background-color: #202024;
+  border-radius: 4px;
+  text-decoration: none;
+  color: #fff;
+  transition: background-color 0.2s, border 0.2s;
+  position: relative;
+}
+.side-nav-card:hover,
+.follow-card:hover,
+.notification-card:hover,
+.yt-sub-card:hover {
+  background-color: #2a2a2e;
+}
+.follow-card.notifications-enabled {
+  border: 2px solid #ffd700;
+}
+.avatar {
+  width: 50px;
+  height: 50px;
+  margin-right: 10px;
+}
+.avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.card-content {
+  flex: 1;
+}
+.channel-title {
+  font-size: 16px;
+  font-weight: bold;
+  margin: 0;
+  color: #efeff1;
+}
+.game-title {
+  font-size: 14px;
+  color: #a970ff;
+  margin: 4px 0;
+}
+.stream-title {
+  font-size: 14px;
+  color: #efeff1;
+  margin: 4px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live-status {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: #adadb8;
+}
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  background-color: #ff0000;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+.viewer-count {
+  margin-left: 10px;
+  color: #adadb8;
+}
+.stream-duration {
+  font-size: 12px;
+  color: #adadb8;
+  margin: 4px 0;
+  transition: all 0.3s ease;
+}
+.subscription-date {
+  font-size: 12px;
+  color: #adadb8;
+  margin: 4px 0;
+}
+.notification-timestamp {
+  font-size: 12px;
+  color: #adadb8;
+  margin: 4px 0;
+}
+.error {
+  color: #ff5555;
+  text-align: center;
+}
+.login-button {
+  display: block;
+  text-align: center;
+  padding: 10px;
+  background-color: #9146ff;
+  color: #fff;
+  border-radius: 4px;
+  text-decoration: none;
+  margin-bottom: 20px;
+}
+.login-button:hover {
+  background-color: #7a3dd6;
+}
+.youtube-login-button {
+  display: block;
+  text-align: center;
+  padding: 10px;
+  background-color: #ff0000;
+  color: #fff;
+  border-radius: 4px;
+  text-decoration: none;
+  margin-bottom: 20px;
+}
+.youtube-login-button:hover {
+  background-color: #cc0000;
+}
+.sort-search-container {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.sort-selector {
+  flex: 1;
+  padding: 8px;
+  background-color: #202024;
+  color: #efeff1;
+  border: 1px solid #a970ff;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.sort-selector:focus {
+  outline: none;
+  border-color: #9146ff;
+}
+.search-input {
+  flex: 1;
+  padding: 8px;
+  background-color: #202024;
+  color: #efeff1;
+  border: 1px solid #a970ff;
+  border-radius: 4px;
+  font-size: 14px;
+}
+.search-input:focus {
+  outline: none;
+  border-color: #9146ff;
+}
+.search-input::placeholder {
+  color: #adadb8;
+}
+.notifications-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 10px;
+  max-width: 300px;
+  z-index: 1000;
+}
+.notification {
+  background-color: #202024;
+  color: #efeff1;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #a970ff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+.notification-close {
+  cursor: pointer;
+  color: #ff5555;
+  font-weight: bold;
+  margin-left: 10px;
+}
+.loader {
+  text-align: center;
+  color: #a970ff;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+.loader::after {
+  content: "Chargement...";
+  display: inline-block;
+  animation: dots 1.5s infinite;
+}
+@keyframes dots {
+  0% {
+    content: "Chargement.";
+  }
+  33% {
+    content: "Chargement..";
+  }
+  66% {
+    content: "Chargement...";
+  }
+}
+.notification-bell {
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  fill: #efeff1;
+  transition: fill 0.2s;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.notification-bell.active {
+  fill: #ffd700;
+}

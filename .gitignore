@@ -1,0 +1,21 @@
+# Ignorer un dossier spécifique
+node_modules/
+.cache/
+logs/
+
+# Ignorer des fichiers spécifiques
+*.log
+*.tmp
+*.jpg
+*.mp3
+
+# Ignorer tous les fichiers dans un dossier
+assets/*.png
+assets/*.jpg
+assets/*.mp3
+
+twitch_tokens.json
+youtube_tokens.json
+ytChannels.json
+ytVideos.json
+https://1023cd8f-ce60-46bb-949d-f23f21213375@api.glitch.com/git/streamview
