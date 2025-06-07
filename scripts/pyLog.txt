@@ -1056,3 +1056,136 @@
 2025-06-07 04:10:21 - Ririka Ch. 一条莉々華 ‐ ReGLOSS : 2 upcoming, 1 live
 2025-06-07 04:10:21 - Nombre total de vidéos trouvées : 192 (upcoming: 173, live: 19)
 2025-06-07 04:10:21 - Temps d'exécution : 20.52 secondes
+2025-06-07 04:20:02 - Attention : Le videoId q1JGHgVUMCE peut ne pas correspondre à une vidéo live à la position 587794
+2025-06-07 04:20:02 - Pipkin Pippa Ch.【Phase Connect】 : 5 upcoming, 1 live
+2025-06-07 04:20:02 - Hanakyo Ch. : 1 upcoming, 0 live
+2025-06-07 04:20:02 - Ember Amane Ch. 【Phase Connect】 : 3 upcoming, 0 live
+2025-06-07 04:20:02 - Cecilia Immergreen Ch. hololive-EN : 1 upcoming, 0 live
+2025-06-07 04:20:02 - Miko Ch. さくらみこ : 1 upcoming, 0 live
+2025-06-07 04:20:02 - Raora Panthera Ch. hololive-EN : 1 upcoming, 0 live
+2025-06-07 04:20:03 - Muyu Ch. むうむゆ【Phase Connect】 : 4 upcoming, 0 live
+2025-06-07 04:20:03 - Remilia Ch. レミリア・ネフィス 【Phase Connect】 : 2 upcoming, 0 live
+2025-06-07 04:20:03 - HAACHAMA Ch 赤井はあと : 1 upcoming, 0 live
+2025-06-07 04:20:03 - Koefficient : 1 upcoming, 0 live
+2025-06-07 04:20:03 - Yuu Ch. 絢世ユウ 【Phase Connect】 : 1 upcoming, 0 live
+2025-06-07 04:20:03 - Ouro Kronii Ch. hololive-EN : 1 upcoming, 0 live
+2025-06-07 04:20:04 - Vestia Zeta Ch. hololive-ID : 2 upcoming, 0 live
+2025-06-07 04:20:05 - Attention : Le videoId TmtK8rZu3YU peut ne pas correspondre à une vidéo live à la position 568325
+2025-06-07 04:20:05 - FUWAMOCO Ch. hololive-EN : 1 upcoming, 1 live
+2025-06-07 04:20:05 - Laplus ch. ラプラス・ダークネス - holoX - : 5 upcoming, 0 live
+2025-06-07 04:20:05 - Rie Ch. 姫宮りえ【Phase Connect】 : 3 upcoming, 0 live
+2025-06-07 04:20:05 - Panko Ch.【Phase Connect】 : 1 upcoming, 0 live
+2025-06-07 04:20:05 - Attention : Le videoId tTyhKsq6IPo peut ne pas correspondre à une vidéo live à la position 565741
+2025-06-07 04:20:05 - Peo Ch. Yukinoshita Peo : 1 upcoming, 1 live
+2025-06-07 04:20:05 - Tenma Ch. マエミ 天満 【Phase Connect】 : 3 upcoming, 0 live
+2025-06-07 04:20:05 - Attention : Le videoId TrwISWvcrGs peut ne pas correspondre à une vidéo live à la position 558039
+2025-06-07 04:20:05 - Eimi Ch. 勇エイミ【Phase Connect】 : 0 upcoming, 1 live
+2025-06-07 04:20:06 - Takanashi Kiara Ch. hololive-EN : 1 upcoming, 0 live
+2025-06-07 04:20:06 - Shiina Ch. 天ノ川 しいな 【Phase Connect】 : 2 upcoming, 0 live
+2025-06-07 04:20:06 - IRyS Ch. hololive-EN : 1 upcoming, 0 live
+2025-06-07 04:20:06 - Ninomae Ina&#39;nis Ch. hololive-EN : 1 upcoming, 0 live
+2025-06-07 04:20:06 - Kureiji Ollie Ch. hololive-ID : 1 upcoming, 0 live
+2025-06-07 04:20:06 - Jelly Ch. 【Phase Connect】 : 2 upcoming, 0 live
+2025-06-07 04:20:06 - Attention : Le videoId VcQcHBqgPaE peut ne pas correspondre à une vidéo live à la position 570477
+2025-06-07 04:20:06 - Uruka Ch. 藤倉ウルカ 【Phase Connect】 : 3 upcoming, 0 live
+2025-06-07 04:20:06 - Clio Ch. クリオ・アイテ [Phase Connect] : 2 upcoming, 1 live
+2025-06-07 04:20:06 - Eepy Sleepy Ch. 【Phase Connect】 : 1 upcoming, 0 live
+2025-06-07 04:20:06 - Koseki Bijou Ch. hololive-EN : 1 upcoming, 0 live
+2025-06-07 04:20:07 - Maid Mint Ch. ミント・ファントーム : 2 upcoming, 0 live
+2025-06-07 04:20:07 - Pico Ch. 倉夢ぴこ 【Phase Connect】 : 1 upcoming, 0 live
+2025-06-07 04:20:07 - Memory Ch. 恋衣めもり 【Phase Connect】 : 2 upcoming, 0 live
+2025-06-07 04:20:07 - Botan Ch.獅白ぼたん : 2 upcoming, 0 live
+2025-06-07 04:20:07 - Kaela Kovalskia Ch. hololive-ID : 1 upcoming, 0 live
+2025-06-07 04:20:07 - Suisei Channel : 1 upcoming, 0 live
+2025-06-07 04:20:08 - Vivi Ch. 綺々羅々ヴィヴィ - FLOW GLOW : 1 upcoming, 0 live
+2025-06-07 04:20:08 - Attention : Le videoId xTB0sPt8FFY peut ne pas correspondre à une vidéo live à la position 559319
+2025-06-07 04:20:08 - Su Ch. 水宮枢 - FLOW GLOW : 0 upcoming, 1 live
+2025-06-07 04:20:08 - NYANA BANYANA : 2 upcoming, 0 live
+2025-06-07 04:20:09 - Kanata Ch. Kanata Amane : 2 upcoming, 0 live
+2025-06-07 04:20:09 - Hajime Ch. 轟はじめ ‐ ReGLOSS : 1 upcoming, 0 live
+2025-06-07 04:20:09 - Hina Ch. 光鳴ひな【Phase Connect】 : 3 upcoming, 0 live
+2025-06-07 04:20:10 - Poko Rakun Ch. idol : 2 upcoming, 0 live
+2025-06-07 04:20:10 - Miruku Kumazuki Ch. : 1 upcoming, 0 live
+2025-06-07 04:20:10 - Erina Ch. エリナ・マキナ 【Phase Connect】 : 2 upcoming, 0 live
+2025-06-07 04:20:10 - Anya Melfissa Ch. hololive-ID : 2 upcoming, 0 live
+2025-06-07 04:20:10 - Yoto 夜都 | EN Vtuber : 3 upcoming, 0 live
+2025-06-07 04:20:10 - Luna Ch. 姫森ルーナ : 3 upcoming, 0 live
+2025-06-07 04:20:11 - Runie Ch. ルニ・ルーズ【Phase Connect】 : 2 upcoming, 0 live
+2025-06-07 04:20:11 - Shiori Novella Ch. hololive-EN : 1 upcoming, 0 live
+2025-06-07 04:20:11 - Attention : Le videoId -cGwppqc1hU peut ne pas correspondre à une vidéo live à la position 571133
+2025-06-07 04:20:11 - Charlotte Suzu / シャーロット・スズ : 2 upcoming, 1 live
+2025-06-07 04:20:11 - HIMEHINA Channel : 1 upcoming, 0 live
+2025-06-07 04:20:11 - Lia Ch.【Phase Connect】 : 1 upcoming, 0 live
+2025-06-07 04:20:11 - Liliana Vampaia Ch. 吸血鬼 リリアナ : 1 upcoming, 0 live
+2025-06-07 04:20:11 - Matsuri Channel 夏色まつり : 2 upcoming, 0 live
+2025-06-07 04:20:12 - The8BitDrummer : 1 upcoming, 0 live
+2025-06-07 04:20:12 - Hakos Baelz Ch. hololive-EN : 1 upcoming, 0 live
+2025-06-07 04:20:12 - Ayunda Risu Ch. hololive-ID : 1 upcoming, 0 live
+2025-06-07 04:20:12 - Immy Bisou Ch. VAllure : 2 upcoming, 0 live
+2025-06-07 04:20:12 - Attention : Le videoId Eyzb8No30y0 peut ne pas correspondre à une vidéo live à la position 565443
+2025-06-07 04:20:12 - Niko Ch. 虎金妃笑虎 - FLOW GLOW : 1 upcoming, 1 live
+2025-06-07 04:20:12 - Nerissa Ravencroft Ch. hololive-EN : 1 upcoming, 0 live
+2025-06-07 04:20:13 - kson ONAIR : 2 upcoming, 0 live
+2025-06-07 04:20:13 - PillowDear : 1 upcoming, 0 live
+2025-06-07 04:20:13 - Attention : Le videoId xWCeQC8NPWU peut ne pas correspondre à une vidéo live à la position 586999
+2025-06-07 04:20:13 - 河崎 翆 ch / Kawasaki Sui ch. : 4 upcoming, 1 live
+2025-06-07 04:20:13 - Attention : Le videoId 1JfycUW2qn4 peut ne pas correspondre à une vidéo live à la position 567191
+2025-06-07 04:20:13 - Yua UNO : 1 upcoming, 1 live
+2025-06-07 04:20:13 - Roboco Ch. - ロボ子 : 4 upcoming, 0 live
+2025-06-07 04:20:14 - Kanna Yanagi ch. 柳かんな : 4 upcoming, 0 live
+2025-06-07 04:20:14 - Enya Ignis Ch. idol-ENCORE : 1 upcoming, 0 live
+2025-06-07 04:20:14 - Penumbral : 1 upcoming, 0 live
+2025-06-07 04:20:14 - Attention : Le videoId HJwB2NCED5w peut ne pas correspondre à une vidéo live à la position 576398
+2025-06-07 04:20:14 - Nene Amano Ch. 天野寧々 : 2 upcoming, 1 live
+2025-06-07 04:20:14 - Chihaya Ch. 輪堂 千速 - FLOW GLOW : 1 upcoming, 0 live
+2025-06-07 04:20:14 - Watame Ch. 角巻わため : 1 upcoming, 0 live
+2025-06-07 04:20:14 - Polka Ch. 尾丸ポルカ : 1 upcoming, 0 live
+2025-06-07 04:20:15 - Iori Ch. 白鹿いおり【Phase Connect】 : 2 upcoming, 0 live
+2025-06-07 04:20:15 - フブキCh。白上フブキ : 1 upcoming, 0 live
+2025-06-07 04:20:15 - Loki Ch. 巫ロキ 【Phase Connect】 : 1 upcoming, 0 live
+2025-06-07 04:20:15 - Okayu Ch. 猫又おかゆ : 1 upcoming, 0 live
+2025-06-07 04:20:15 - Attention : Le videoId KlLdYLW9UH4 peut ne pas correspondre à une vidéo live à la position 557015
+2025-06-07 04:20:15 - Riona Ch. 響咲リオナ - FLOW GLOW : 1 upcoming, 0 live
+2025-06-07 04:20:15 - girl_dm_ : 0 upcoming, 1 live
+2025-06-07 04:20:16 - Clara Ch. 歌美鳴クララ 【Phase Connect】 : 1 upcoming, 0 live
+2025-06-07 04:20:16 - Dokibird : 1 upcoming, 0 live
+2025-06-07 04:20:16 - Attention : Le videoId wmJVczOQYMI peut ne pas correspondre à une vidéo live à la position 558708
+2025-06-07 04:20:16 - Towa Ch. 常闇トワ : 0 upcoming, 1 live
+2025-06-07 04:20:16 - Attention : Le videoId EhzHvGTVstA peut ne pas correspondre à une vidéo live à la position 567146
+2025-06-07 04:20:16 - Lui ch. 鷹嶺ルイ - holoX - : 1 upcoming, 1 live
+2025-06-07 04:20:16 - 葉山舞鈴 / Ohayama Ch. : 1 upcoming, 0 live
+2025-06-07 04:20:16 - AkiRosenthal Ch. hololive-JP : 1 upcoming, 0 live
+2025-06-07 04:20:16 - Attention : Le videoId 5yPg7MKZcwc peut ne pas correspondre à une vidéo live à la position 565722
+2025-06-07 04:20:16 - Subaru Ch. 大空スバル : 1 upcoming, 1 live
+2025-06-07 04:20:17 - Attention : Le videoId Q4kRa-AT_44 peut ne pas correspondre à une vidéo live à la position 572626
+2025-06-07 04:20:17 - ペイリアン_peilien : 2 upcoming, 1 live
+2025-06-07 04:20:17 - Shirousa Mikumi - VOLs : 2 upcoming, 0 live
+2025-06-07 04:20:18 - Raden Ch. 儒烏風亭らでん ‐ ReGLOSS : 1 upcoming, 0 live
+2025-06-07 04:20:18 - Juna Unagi Ch. : 1 upcoming, 0 live
+2025-06-07 04:20:18 - miia : 1 upcoming, 0 live
+2025-06-07 04:20:18 - Raki Kazuki Ch. : 1 upcoming, 0 live
+2025-06-07 04:20:18 - Jira Jisaki 【VSPO! EN】 : 1 upcoming, 0 live
+2025-06-07 04:20:19 - Noel Ch. 白銀ノエル : 2 upcoming, 0 live
+2025-06-07 04:20:19 - Kattarina Qutie Ch. : 1 upcoming, 0 live
+2025-06-07 04:20:19 - Dizzy Dokuro Ch. 【Phase Connect】 : 2 upcoming, 0 live
+2025-06-07 04:20:19 - Iroha ch. 風真いろは - holoX - : 1 upcoming, 0 live
+2025-06-07 04:20:19 - Kanade Ch. 音乃瀬奏 ‐ ReGLOSS : 2 upcoming, 0 live
+2025-06-07 04:20:19 - Kohaku Yumekui Ch. 夢喰己白【Ephemira】 : 2 upcoming, 0 live
+2025-06-07 04:20:19 - Kai Saikota Ch. idol-ENDLESS : 1 upcoming, 0 live
+2025-06-07 04:20:19 - Mivi Aivori Ch. V&amp;U : 2 upcoming, 0 live
+2025-06-07 04:20:20 - Nito Ch. 新兎わい : 2 upcoming, 0 live
+2025-06-07 04:20:20 - Ao Ch. 火威青 ‐ ReGLOSS : 1 upcoming, 0 live
+2025-06-07 04:20:20 - Fuyo Cloverfield : 1 upcoming, 0 live
+2025-06-07 04:20:20 - Nanako Niku Ch. 【SVP】 : 1 upcoming, 0 live
+2025-06-07 04:20:20 - Rin Penrose Ch. and Snebby : 1 upcoming, 0 live
+2025-06-07 04:20:21 - Attention : Le videoId aFqfLjdX7_E peut ne pas correspondre à une vidéo live à la position 575409
+2025-06-07 04:20:21 - Koyori ch. 博衣こより - holoX - : 2 upcoming, 1 live
+2025-06-07 04:20:21 - REM Kanashibari Ch.【V4Mirai】 : 2 upcoming, 0 live
+2025-06-07 04:20:21 - Chio Chompi Ch.【PixelLink】 : 1 upcoming, 0 live
+2025-06-07 04:20:21 - Moona Hoshinova hololive-ID : 2 upcoming, 0 live
+2025-06-07 04:20:21 - Attention : Le videoId uRU7vvRF0kM peut ne pas correspondre à une vidéo live à la position 558090
+2025-06-07 04:20:21 - Yena Youngblood Ch. idol : 0 upcoming, 1 live
+2025-06-07 04:20:22 - Attention : Le videoId rk1Iz4LbhKI peut ne pas correspondre à une vidéo live à la position 573684
+2025-06-07 04:20:22 - Ririka Ch. 一条莉々華 ‐ ReGLOSS : 2 upcoming, 1 live
+2025-06-07 04:20:22 - Nombre total de vidéos trouvées : 192 (upcoming: 173, live: 19)
+2025-06-07 04:20:22 - Temps d'exécution : 21.78 secondes
