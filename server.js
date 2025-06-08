@@ -573,7 +573,7 @@ async function runPythonScript(accessToken) {
 }
 
 // Planifier l'exécution toutes les 5 minutes
-cron.schedule("*/10 * * * *", async () => {
+cron.schedule("*/1 * * * *", async () => {
   console.log(`[${new Date().toISOString()}] Lancement du script Python planifié...`);
   if (!youtubeAccessToken && youtubeRefreshToken) {
     console.log(`[${new Date().toISOString()}] Jeton d'accès manquant, tentative de rafraîchissement...`);
