@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StreamView</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="notifications-container" id="notifications"></div>
+    <div class="container">
+      <div class="tabs">
+        <div class="tab active" data-tab="live">Live</div>
+        <div class="tab" data-tab="follow">
+          <img
+            src="https://cdn.glitch.global/381e5d8d-b90c-44f3-b3a2-2b1638838939/Twitch_logo.png?v=1748302658489"
+            alt="Twitch Icon"
+            class="twitch-icon"
+          />Follow
+        </div>
+        <div class="tab" data-tab="ytsub">
+          <img
+            src="https://cdn.glitch.global/381e5d8d-b90c-44f3-b3a2-2b1638838939/Youtube_logo.png?v=1748302329695"
+            alt="YouTube Icon"
+          />Sub
+        </div>
+        <div class="tab" data-tab="notification-tab">Notifications</div>
+        <div class="tab" data-tab="settings">
+          <svg class="settings-icon" viewBox="0 0 24 24">
+            <path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.65l-2-3.46a.5.5 0 0 0-.61-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.43h-4a.5.5 0 0 0-.5.43l-.36 2.54c-.59.24-1.12.56-1.62.94l-2.39-.96a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.65l2.03 1.58c-.04.3-.06.61-.06.94s.02.64.06.94l-2.03 1.58a.5.5 0 0 0-.12.65l2 3.46a.5.5 0 0 0 .61.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54a.5.5 0 0 0 .5.43h4a.5.5 0 0 0 .5-.43l.36-2.54c.59-.24 1.12-.56 1.62-.94l2.39.96a.5.5 0 0 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.65l-2.03-1.58zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/>
+          </svg>
+        </div>
+      </div>
+      <div id="live" class="tab-content active">
+        <div class="sort-search-container">
+          <select id="sort-selector" class="sort-selector">
+            <option value="viewers">Sort : Viewers</option>
+            <option value="name">Sort : Name</option>
+            <option value="duration">Sort : Recent</option>
+          </select>
+          <input
+            type="text"
+            id="search-live"
+            class="search-input"
+            placeholder="Search..."
+          />
+        </div>
+        <a id="login-button" class="login-button" href="/auth/twitch"
+          >Se connecter avec Twitch</a
+        >
+        <div id="channels-list"><div class="loader"></div></div>
+      </div>
+      <div id="follow" class="tab-content">
+        <div class="sort-search-container">
+          <select id="sort-follow-selector" class="sort-selector">
+            <option value="name">Sort : Name</option>
+            <option value="date">Sort : Newest</option>
+          </select>
+          <input
+            type="text"
+            id="search-follow"
+            class="search-input"
+            placeholder="Search..."
+          />
+        </div>
+        <div id="followed-channels-list"><div class="loader"></div></div>
+      </div>
+      <div id="ytsub" class="tab-content">
+        <div class="sort-search-container">
+          <select id="sort-ytsub-selector" class="sort-selector">
+            <option value="name">Sort : Name</option>
+            <option value="date">Sort : Newest</option>
+          </select>
+          <input
+            type="text"
+            id="search-ytsub"
+            class="search-input"
+            placeholder="Search..."
+          />
+        </div>
+        <a
+          id="youtube-login-button"
+          class="youtube-login-button"
+          href="/auth/youtube"
+          >Se connecter avec YouTube</a
+        >
+        <div id="ytsub-channels-list"><div class="loader"></div></div>
+      </div>
+      <div id="notification-tab" class="tab-content">
+        <div class="sort-search-container">
+          <input
+            type="text"
+            id="search-notifications"
+            class="search-input"
+            placeholder="Search..."
+          />
+        </div>
+        <div id="notification-log-list"><div class="loader"></div></div>
+      </div>
+      <div id="settings" class="tab-content">
+        <a
+          id="logout-api-button"
+          class="login-button"
+          href="/logout-api"
+          style="display: none"
+          >Logout API</a
+        >
+      </div>
+    </div>
+    <script src="script.js"></script>
+  </body>
+</html>

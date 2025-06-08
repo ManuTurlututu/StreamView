@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="300"> <!-- Rafraîchit la page toutes les 5 minutes -->
+    <title>Streams Schedule</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="font-sans">
+    <div class="container px-4 py-8">
+        <div class="header">
+            <input type="text" id="search-bar" class="search-bar" placeholder="Rechercher chaîne ou vidéo...">
+        </div>
+        <div class="tabs">
+            <button class="tab-button active" onclick="showTab('yt-schedule')">YT Schedule</button>
+            <button class="tab-button" onclick="showTab('live')">Live</button>
+            <button class="tab-button" onclick="showTab('sub-ch')">Sub Ch.</button>
+        </div>
+        <div id="yt-schedule" class="tab-content active">
+            <div class="items" id="upcoming-items">
+                <!-- Les éléments à venir seront remplis par JavaScript -->
+            </div>
+        </div>
+        <div id="live" class="tab-content">
+            <div class="items" id="live-items">
+                <!-- Les éléments en direct seront remplis par JavaScript -->
+            </div>
+        </div>
+        <div id="sub-ch" class="tab-content">
+            <div class="items" id="sub-ch-items">
+                <!-- Les chaînes suivies seront remplies par JavaScript -->
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

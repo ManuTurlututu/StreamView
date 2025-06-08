@@ -1,0 +1,339 @@
+/* Styles de base */
+body {
+  font-family: Arial, sans-serif;
+  background-color: #0f0f0f; /* Nouveau fond sombre */
+  color: #ffffff;
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Conteneur principal */
+.container {
+  width: 100%;
+  margin: 0 auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+  max-width: 1200px; /* Limite la largeur pour les grands écrans */
+}
+
+/* En-tête avec barre de recherche */
+.header {
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 20px;
+}
+
+.search-bar {
+  padding: 8px;
+  border: 2px solid #efeff1; /* Couleur claire pour la bordure */
+  border-radius: 8px;
+  background-color: #202024; /* Fond des inputs existants */
+  color: #efeff1;
+  font-size: 16px;
+  width: 200px;
+  transition: border-color 0.3s;
+}
+
+.search-bar:focus {
+  outline: none;
+  border-color: #a970ff; /* Couleur d'accent existante */
+}
+
+/* Onglets */
+.tabs {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.tab-button {
+  padding: 10px 20px;
+  margin: 0 5px;
+  background-color: #202024; /* Fond des onglets existants */
+  border: 2px solid #efeff1;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  font-size: 18px;
+  color: #efeff1;
+  transition: background-color 0.3s, border-color 0.3s, color 0.3s;
+}
+
+.tab-button.active {
+  background-color: #a970ff; /* Couleur d'accent pour onglet actif */
+  border-bottom: none;
+  color: #18181b;
+  font-weight: bold;
+}
+
+.tab-button:hover {
+  background-color: #2a2a2e; /* Hover des onglets existants */
+}
+
+/* Contenu des onglets */
+.tab-content {
+  display: none;
+  width: 100%;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+/* Grille des éléments */
+.items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 20px;
+  width: 100%;
+  justify-items: center;
+}
+
+/* Conteneur d'élément */
+.item-container {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  border-radius: 8px;
+  border: 2px solid #efeff1; /* Bordure claire */
+  background-color: #18181b; /* Fond des cartes existantes */
+  transition: background-color 0.2s;
+}
+
+.item-container.yellow-border {
+  border: 2px solid #ffd700; /* Bordure pour notifications activées */
+}
+
+.item-container.red-border {
+  border: 2px solid #ff0000; /* Bordure pour live */
+}
+
+.item-container:hover {
+  background-color: #2a2a2e; /* Hover des cartes existantes */
+}
+
+.item-container p {
+  font-size: 18px;
+  text-align: center;
+  margin: 8px 0;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  color: #efeff1;
+}
+
+/* Images */
+.thumbnail {
+  transition: transform 0.3s;
+  width: 300px;
+  height: auto;
+  object-fit: cover;
+  aspect-ratio: 16/9;
+  border-radius: 8px;
+  margin: 0 auto;
+}
+
+.thumbnail:hover {
+  transform: scale(1.1);
+}
+
+.channel-img {
+  transition: transform 0.3s;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin: 0;
+}
+
+.channel-img:hover {
+  transform: scale(1.1);
+}
+
+/* Ligne d'en-tête dans les conteneurs */
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.schedule-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.schedule-info p {
+  font-size: 16px;
+  margin: 0;
+  text-align: right;
+  color: #adadb8; /* Couleur des textes secondaires existants */
+}
+
+/* Boutons de cloche et marque-page */
+.bell-button, .bookmark-button {
+  transition: transform 0.3s ease;
+  cursor: pointer;
+  width: 90px;
+  height: 90px;
+  margin-top: -20px;
+  margin-right: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bell-button:hover, .bookmark-button:hover {
+  transform: scale(1.1);
+}
+
+.bell-button svg, .bookmark-button svg {
+  width: 110%;
+  height: 110%;
+  fill: #efeff1;
+  transition: fill 0.3s ease;
+}
+
+.bell-button.yellow svg {
+  fill: #ffd700; /* Couleur pour cloche active */
+}
+
+.bookmark-button.orange svg {
+  fill: #ffa500; /* Couleur pour marque-page actif */
+}
+
+/* Notifications */
+.notification {
+  position: fixed;
+  right: 20px;
+  background-color: #202024;
+  border: 2px solid #a970ff; /* Bordure avec couleur d'accent */
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  align-items: flex-start;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transform: translateX(100%);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  max-width: 300px;
+  z-index: 1000;
+}
+
+.notification.show {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.notification img {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  margin-right: 12px;
+}
+
+.notification .close-button {
+  margin-left: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notification .close-button svg {
+  width: 20px;
+  height: 20px;
+  fill: #efeff1;
+  transition: fill 0.3s ease;
+}
+
+.notification .close-button:hover svg {
+  fill: #ff5555; /* Couleur d'erreur existante */
+}
+
+/* Liens */
+a {
+  color: #efeff1;
+  text-decoration: none;
+  transition: color 0.3s;
+}
+
+a:hover {
+  color: #a970ff; /* Couleur d'accent pour hover */
+}
+
+/* Loader (conservé de l'ancien CSS) */
+.loader {
+  text-align: center;
+  color: #a970ff;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.loader::after {
+  content: "Chargement...";
+  display: inline-block;
+  animation: dots 1.5s infinite;
+}
+
+@keyframes dots {
+  0% { content: "Chargement."; }
+  33% { content: "Chargement.."; }
+  66% { content: "Chargement..."; }
+}
+
+/* Boutons de connexion (adaptés de l'ancien CSS) */
+.login-button, .youtube-login-button {
+  display: block;
+  text-align: center;
+  padding: 10px;
+  border-radius: 4px;
+  text-decoration: none;
+  margin-bottom: 20px;
+  color: #fff;
+}
+
+.login-button {
+  background-color: #9146ff; /* Couleur Twitch */
+}
+
+.login-button:hover {
+  background-color: #7a3dd6;
+}
+
+.youtube-login-button {
+  background-color: #ff0000; /* Couleur YouTube */
+}
+
+.youtube-login-button:hover {
+  background-color: #cc0000;
+}
+
+/* Classes utilitaires pour le texte */
+.text-blue-400 {
+  color: #a970ff; /* Adapté à la couleur d'accent */
+}
+
+.text-red-500 {
+  color: #ff0000;
+}
+
+.text-gray-300 {
+  color: #adadb8; /* Couleur secondaire existante */
+}
+
+.font-bold {
+  font-weight: bold;
+}
