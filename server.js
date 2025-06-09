@@ -11,6 +11,7 @@ const rateLimit = require("express-rate-limit");
 const execPromise = util.promisify(exec);
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
+const mongoose = require('mongoose'); // Ajout de mongoose
 const notificationEmitter = new EventEmitter();
 
 const app = express();
@@ -41,6 +42,14 @@ let youtubeAccessToken = null;
 let youtubeRefreshToken = null;
 let twitchAccessToken = null;
 let twitchRefreshToken = null;
+
+// Connexion à MongoDB
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log(`[${new Date().toISOString()}] Connecté à MongoDB`))
+.catch(error => console.error(`[${new Date().toISOString()}] Erreur de connexion à MongoDB:`, error.message));
 
 // Vérification des variables d'environnement
 if (!clientId || !clientSecret) {
