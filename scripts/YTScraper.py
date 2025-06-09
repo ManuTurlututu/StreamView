@@ -1,5 +1,4 @@
 import sys
-import json
 import requests
 import os
 import re
@@ -7,15 +6,36 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import argparse
+from dotenv import load_dotenv
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure, OperationFailure
 
 # Forcer l'encodage UTF-8 pour stdout et stderr
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 
+# Charger les variables d'environnement depuis .env
+load_dotenv()
+
+# URI MongoDB depuis .env
+MONGODB_URI = os.getenv('MONGODB_URI')
+if not MONGODB_URI:
+    print("Erreur : MONGODB_URI manquant dans .env")
+    sys.exit(1)
+
+# Connexion à MongoDB
+try:
+    client = MongoClient(MONGODB_URI)
+    db = client.get_database()  # Le nom de la base est dans l'URI
+    youtube_channels_collection = db['youtubechannels']
+    youtube_videos_collection = db['youtubeVideos']
+    print("Connecté à MongoDB avec succès")
+except ConnectionFailure as e:
+    print(f"Erreur de connexion à MongoDB : {str(e)}")
+    sys.exit(1)
+
 # Chemins des fichiers relatifs au script
 base_dir = os.path.dirname(__file__)
-json_file = os.path.join(base_dir, '..', 'ytChannels.json')
-output_file = os.path.join(base_dir, '..', 'ytVideos.json')
 log_file = os.path.join(base_dir, 'pyLog.txt')
 error_html_dir = os.path.join(base_dir, '..', 'ErrorHTML')
 
@@ -57,7 +77,7 @@ def process_url(channel_data, session, access_token):
             raw_title = title_match.group(1).strip()
             channel_name = re.sub(r'\s*-\s*YouTube\s*$', '', raw_title, flags=re.IGNORECASE)
 
-        # Extraire la vignette de la chaîne depuis <link rel="image_src" href="...">
+        # Extraire la vignette de la chaîne depuis channel_data
         ch_thumbnail = channel_data.get('thumbnail', '')
 
         # Vérifier la présence de vidéos à venir
@@ -109,7 +129,8 @@ def process_url(channel_data, session, access_token):
                 "chUrl": url,
                 "chTitle": channel_name,
                 "chThumbnail": ch_thumbnail,
-                "status": "upcoming"
+                "status": "upcoming",
+                "timestamp": datetime.now().isoformat()  # Ajout d'un timestamp
             })
 
         # Vérifier la présence de vidéos en direct (live) avec "style":"LIVE"
@@ -166,7 +187,8 @@ def process_url(channel_data, session, access_token):
                 "chUrl": url,
                 "chTitle": channel_name,
                 "chThumbnail": ch_thumbnail,
-                "status": "live"
+                "status": "live",
+                "timestamp": datetime.now().isoformat()  # Ajout d'un timestamp
             })
 
         upcoming_count = sum(1 for r in results if r["status"] == "upcoming")
@@ -190,8 +212,9 @@ def main():
 
     start_time = time.time()
     try:
-        with open(json_file, 'r', encoding='utf-8') as file:
-            channels = json.load(file)
+        # Lire les chaînes depuis la collection MongoDB
+        channels = list(youtube_channels_collection.find({}))
+        log_message(f"{len(channels)} chaînes lues depuis la collection 'youtubechannels'")
 
         video_results = []
         with requests.Session() as session:
@@ -201,14 +224,20 @@ def main():
                     channel_videos = future.result()
                     video_results.extend(channel_videos)
 
-        with open(output_file, 'w', encoding='utf-8') as file:
-            json.dump(video_results, file, ensure_ascii=False, indent=4)
+        # Insérer les résultats dans la collection MongoDB
+        if video_results:
+            youtube_videos_collection.delete_many({})  # Vider la collection avant insertion (optionnel)
+            youtube_videos_collection.insert_many(video_results)
+            log_message(f"{len(video_results)} vidéos insérées dans la collection 'youtubeVideos'")
 
         upcoming_total = sum(1 for r in video_results if r["status"] == "upcoming")
         live_total = sum(1 for r in video_results if r["status"] == "live")
         log_message(f"Nombre total de vidéos trouvées : {len(video_results)} (upcoming: {upcoming_total}, live: {live_total})")
         log_message(f"Temps d'exécution : {time.time() - start_time:.2f} secondes")
 
+    except OperationFailure as e:
+        log_message(f"Erreur MongoDB : {str(e)}")
+        sys.exit(1)
     except Exception as e:
         log_message(f"Erreur générale : {str(e)}")
         sys.exit(1)
