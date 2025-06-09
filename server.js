@@ -51,6 +51,108 @@ mongoose.connect(process.env.MONGODB_URI, {
 .then(() => console.log(`[${new Date().toISOString()}] Connecté à MongoDB`))
 .catch(error => console.error(`[${new Date().toISOString()}] Erreur de connexion à MongoDB:`, error.message));
 
+// Dépendances (assure-toi qu'elles sont déjà dans ton fichier)
+const express = require("express");
+const mongoose = require("mongoose");
+const app = express();
+app.use(express.json());
+
+// Schéma pour les notifications
+const notificationSchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  user_id: { type: String, required: true },
+  user_name: { type: String, required: true },
+  title: { type: String, required: true },
+  avatar_url: { type: String, required: true },
+  timestamp: { type: Number, required: true }
+}, { timestamps: true });
+
+const Notification = mongoose.model('Notification', notificationSchema);
+
+// Charger les notifications depuis MongoDB (uniquement les 7 derniers jours)
+async function loadNotificationLog() {
+  try {
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const notifications = await Notification.find({ timestamp: { $gt: sevenDaysAgo } }).sort({ timestamp: -1 });
+    return notifications;
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la lecture des notifications depuis MongoDB:`, error.message);
+    return [];
+  }
+}
+
+// Sauvegarder une notification dans MongoDB
+async function saveNotificationLog(notification) {
+  try {
+    const newNotification = new Notification(notification);
+    await newNotification.save();
+    console.log(`[${new Date().toISOString()}] Notification enregistrée dans MongoDB:`, { id: notification.id, user_name: notification.user_name });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde de la notification dans MongoDB:`, error.message);
+  }
+}
+
+// Endpoint pour enregistrer une notification
+app.post("/save-notification-log", async (req, res) => {
+  const notification = req.body;
+  if (
+    !notification.id ||
+    !notification.user_id ||
+    !notification.user_name ||
+    !notification.title ||
+    !notification.avatar_url ||
+    !notification.timestamp
+  ) {
+    console.error(
+      `[${new Date().toISOString()}] Données de notification invalides:`,
+      {
+        receivedKeys: Object.keys(notification),
+        missingKeys: [
+          !notification.id && "id",
+          !notification.user_id && "user_id",
+          !notification.user_name && "user_name",
+          !notification.title && "title",
+          !notification.avatar_url && "avatar_url",
+          !notification.timestamp && "timestamp",
+        ].filter(Boolean),
+      }
+    );
+    return res.status(400).json({ error: "Données de notification invalides" });
+  }
+
+  try {
+    await saveNotificationLog(notification);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(
+      `[${new Date().toISOString()}] Erreur lors de l’enregistrement de la notification:`,
+      error.message
+    );
+    res.status(500).json({
+      error: "Erreur serveur lors de l’enregistrement de la notification",
+    });
+  }
+});
+
+// Endpoint pour récupérer le journal des notifications
+app.get("/get-notification-log", async (req, res) => {
+  try {
+    const notificationLog = await loadNotificationLog();
+    console.log(`[${new Date().toISOString()}] Journal des notifications affiché : ${notificationLog.length}`);
+    res.json(notificationLog);
+  } catch (error) {
+    console.error(
+      `[${new Date().toISOString()}] Erreur lors de la récupération du journal des notifications:`,
+      error.message
+    );
+    res
+      .status(500)
+      .json({
+        error: "Erreur serveur lors de la récupération du journal des notifications",
+      });
+  }
+});
+
 // Vérification des variables d'environnement
 if (!clientId || !clientSecret) {
   console.error(
