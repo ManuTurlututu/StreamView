@@ -866,6 +866,19 @@ app.get("/logout-api", (req, res) => {
   res.redirect("/status");
 });
 
+// URL de votre application Render
+const APP_URL = process.env.APP_URL || 'https://your-app-name.onrender.com';
+
+// Configurer un cron job pour pinger l'application toutes les 10 minutes
+cron.schedule('*/10 * * * *', async () => {
+  try {
+    const response = await axios.get(APP_URL);
+    console.log(`[${new Date().toISOString()}] Auto-ping réussi: Statut ${response.status}`);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de l'auto-ping:`, error.message);
+  }
+});
+
 // Démarrer le serveur
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
