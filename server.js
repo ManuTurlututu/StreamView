@@ -28,7 +28,6 @@ const youtubeRedirectUri = process.env.YOUTUBE_REDIRECT_URI;
 const youtubeScope = "https://www.googleapis.com/auth/youtube.readonly";
 
 const NOTIFICATIONS_FILE = path.join(__dirname, "notifications.json");
-const EXTRACTED_CHANNELS_FILE = path.join(__dirname, "ytChannels.json");
 const YOUTUBE_TOKENS_FILE = path.join(__dirname, "youtube_tokens.json");
 const TWITCH_TOKENS_FILE = path.join(__dirname, "twitch_tokens.json");
 
@@ -62,6 +61,22 @@ const notificationSchema = new mongoose.Schema({
 
 const Notification = mongoose.model('Notification', notificationSchema);
 
+// Schéma pour les chaînes YouTube
+const youtubeChannelSchema = new mongoose.Schema({
+  channelId: { type: String, required: true, unique: true },
+  customUrl: String,
+  title: String,
+  thumbnail: String,
+  bannerExternalUrl: String,
+  subscriptionDate: Date,
+  publishedAt: Date,
+  subscriberCount: String,
+  viewCount: String,
+  country: String
+});
+
+const YoutubeChannel = mongoose.model('YoutubeChannel', youtubeChannelSchema);
+
 // Charger les notifications depuis MongoDB (uniquement les 7 derniers jours)
 async function loadNotificationLog() {
   try {
@@ -82,6 +97,34 @@ async function saveNotificationLog(notification) {
     console.log(`[${new Date().toISOString()}] Notification enregistrée dans MongoDB:`, { id: notification.id, user_name: notification.user_name });
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde de la notification dans MongoDB:`, error.message);
+  }
+}
+
+// Charger les chaînes YouTube depuis MongoDB
+async function loadYoutubeChannels() {
+  try {
+    const channels = await YoutubeChannel.find({});
+    return channels;
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la lecture des chaînes YouTube depuis MongoDB:`, error.message);
+    return [];
+  }
+}
+
+// Sauvegarder les chaînes YouTube dans MongoDB avec upsert
+async function saveYoutubeChannels(channels) {
+  try {
+    const operations = channels.map(channel => ({
+      updateOne: {
+        filter: { channelId: channel.channelId },
+        update: { $set: channel },
+        upsert: true
+      }
+    }));
+    await YoutubeChannel.bulkWrite(operations);
+    console.log(`[${new Date().toISOString()}] Chaînes YouTube sauvegardées dans MongoDB: ${channels.length} chaînes`);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde des chaînes YouTube dans MongoDB:`, error.message);
   }
 }
 
@@ -225,31 +268,6 @@ async function saveNotificationSettings(settings) {
     console.log(`[${new Date().toISOString()}] Paramètres de notification sauvegardés dans notifications.json`);
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde de notifications.json:`, error.message);
-  }
-}
-
-// Fonction pour charger les chaînes YouTube depuis le fichier
-async function loadYoutubeChannels() {
-  try {
-    const data = await fs.readFile(EXTRACTED_CHANNELS_FILE, "utf8");
-    return JSON.parse(data) || [];
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      await fs.writeFile(EXTRACTED_CHANNELS_FILE, JSON.stringify([]));
-      return [];
-    }
-    console.error(`[${new Date().toISOString()}] Erreur lors de la lecture de ytChannels.json:`, error.message);
-    return [];
-  }
-}
-
-// Fonction pour sauvegarder les chaînes YouTube dans le fichier
-async function saveYoutubeChannels(channels) {
-  try {
-    await fs.writeFile(EXTRACTED_CHANNELS_FILE, JSON.stringify(channels, null, 2));
-    console.log(`[${new Date().toISOString()}] Chaînes YouTube sauvegardées dans ytChannels.json: ${channels.length} chaînes`);
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde de ytChannels.json:`, error.message);
   }
 }
 
@@ -503,8 +521,8 @@ async function getYoutubeSubscriptions(accessToken) {
           title: snippet.title || "Unknown",
           thumbnail: snippet.thumbnails?.high?.url || "",
           bannerExternalUrl: brandingSettings.image?.bannerExternalUrl || "",
-          subscriptionDate: sub.subscriptionDate,
-          publishedAt: snippet.publishedAt || "",
+          subscriptionDate: sub.subscriptionDate ? new Date(sub.subscriptionDate) : null,
+          publishedAt: snippet.publishedAt ? new Date(snippet.publishedAt) : null,
           subscriberCount: statistics.subscriberCount || "0",
           viewCount: statistics.viewCount || "0",
           country: snippet.country || "",
@@ -512,7 +530,6 @@ async function getYoutubeSubscriptions(accessToken) {
       });
     }
 
-    await fs.writeFile(path.join(__dirname, "ytChannels.json"), JSON.stringify(channelDetails, null, 2));
     console.log(`[${new Date().toISOString()}] Récupéré ${channelDetails.length} chaînes YouTube`);
     return channelDetails;
   } catch (error) {
