@@ -16,15 +16,11 @@ sys.stderr.reconfigure(encoding='utf-8')
 # Charger les variables d'environnement depuis .env
 load_dotenv()
 
-# URI MongoDB et jeton YouTube depuis .env
+# URI MongoDB depuis .env
 MONGODB_URI = os.getenv('MONGODB_URI')
-YOUTUBE_ACCESS_TOKEN = os.getenv('YOUTUBE_ACCESS_TOKEN')
 
 if not MONGODB_URI:
     print(f"[{datetime.utcnow().isoformat()}] Erreur : MONGODB_URI manquant dans .env")
-    sys.exit(1)
-if not YOUTUBE_ACCESS_TOKEN:
-    print(f"[{datetime.utcnow().isoformat()}] Erreur : YOUTUBE_ACCESS_TOKEN manquant dans les variables d'environnement")
     sys.exit(1)
 
 # Connexion à MongoDB
@@ -54,8 +50,8 @@ def log_message(message):
     print(f"{timestamp} - {message}")
     sys.stdout.flush()
 
-def process_url(channel_data, session, access_token):
-    """Traite une URL, extrait les vidéos avec jeton OAuth."""
+def process_url(channel_data, session):
+    """Traite une URL, extrait les vidéos sans jeton OAuth."""
     results = []
     channel_id = channel_data.get('channelId', '')
     if not channel_id:
@@ -68,15 +64,33 @@ def process_url(channel_data, session, access_token):
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-            "Authorization": f"Bearer {access_token}"
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Cookie": "CONSENT=YES+cb.20250610-05-p0.en+FX+123"  # Cookie de consentement
         }
         log_message(f"Débogage : Envoi de la requête GET à {url}")
-        response = session.get(url, headers=headers, timeout=15)
+        response = session.get(url, headers=headers, timeout=15, allow_redirects=True)
+
+        # Log des redirections
+        if response.history:
+            log_message(f"Débogage : Redirections détectées pour {url} : {[r.url for r in response.history]}")
+
         response.raise_for_status()
         html_content = response.text
         log_message(f"Débogage : Requête réussie pour {url}, taille du HTML : {len(html_content)} caractères")
 
-        # Ajouter un délai de 0,5 seconde après la requête
+        # Vérifier si la page de consentement est présente
+        if "Bevor Sie zu YouTube weitergehen" in html_content or "Before you continue to YouTube" in html_content:
+            log_message(f"Débogage : Page de consentement détectée pour {url}")
+            html_filename = f"{channel_id}_consent_{int(time.time())}.html"
+            html_filepath = os.path.join(error_html_dir, html_filename)
+            with open(html_filepath, 'w', encoding='utf-8') as html_file:
+                html_file.write(html_content)
+            log_message(f"Débogage : HTML de consentement enregistré dans {html_filepath}")
+            return results
+
+        # Ajouter un délai de 0.5 seconde après la requête
         time.sleep(0.5)
 
         # Extraire le nom de la chaîne depuis <title>
@@ -145,10 +159,10 @@ def process_url(channel_data, session, access_token):
             else:
                 log_message(f"Débogage : videoId non trouvé à la position {upcoming_pos}")
 
-            if title and video_url and video_id:
+            if title and video_url and video_thumbnail:
                 results.append({
                     "vidUrl": video_url,
-                    "vidTitle": video_id,
+                    "vidTitle": title,
                     "vidThumbnail": video_thumbnail,
                     "startTime": start_time,
                     "chUrl": url,
@@ -234,6 +248,12 @@ def process_url(channel_data, session, access_token):
             log_message(f"Résultat pour {channel_name} : {upcoming_count} upcoming, {live_count} live")
         else:
             log_message(f"Aucune vidéo trouvée pour {channel_name}")
+            # Enregistrer le HTML pour débogage
+            html_filename = f"{channel_id}_no_streams_{int(time.time())}.html"
+            html_filepath = os.path.join(error_html_dir, html_filename)
+            with open(html_filepath, 'w', encoding='utf-8') as html_file:
+                html_file.write(html_content)
+            log_message(f"Débogage : HTML enregistré dans {html_filepath} pour analyse")
 
         return results
 
@@ -241,14 +261,17 @@ def process_url(channel_data, session, access_token):
         log_message(f"Erreur lors de la requête pour {url} : {str(e)}")
         if e.response:
             log_message(f"Code de statut : {e.response.status_code}, Réponse : {e.response.text[:500]}")
+            # Enregistrer le HTML pour débogage
+            html_filename = f"{channel_id}_error_{int(time.time())}.html"
+            html_filepath = os.path.join(error_html_dir, html_filename)
+            with open(html_filepath, 'w', encoding='utf-8') as html_file:
+                html_file.write(e.response.text)
+            log_message(f"Débogage : HTML d'erreur enregistré dans {html_filepath}")
         return results
 
 def main():
     start_time = time.time()
     try:
-        # Vérifier le jeton YouTube
-        log_message("Jeton YouTube récupéré avec succès depuis YOUTUBE_ACCESS_TOKEN")
-
         # Lire les chaînes depuis la collection MongoDB
         channels = list(youtube_channels_collection.find({}))
         log_message(f"{len(channels)} chaînes lues depuis la collection 'youtubechannels'")
@@ -258,7 +281,7 @@ def main():
         video_results = []
         with requests.Session() as session:
             with ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_channel = {executor.submit(process_url, channel_data, session, YOUTUBE_ACCESS_TOKEN): channel_data for channel_data in channels}
+                future_to_channel = {executor.submit(process_url, channel_data, session): channel_data for channel_data in channels}
                 for future in as_completed(future_to_channel):
                     channel_videos = future.result()
                     video_results.extend(channel_videos)
