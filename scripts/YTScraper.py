@@ -108,8 +108,10 @@ def process_url(channel_data, session, access_token):
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
             "Authorization": f"Bearer {access_token}",
-            "Accept-Language": "fr-FR,fr;q=0.9",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+            "Accept-Language": "en-US,en;q=0.9",  # Forcer la langue en anglais (US)
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1"  # Simuler une navigation par navigateur
         }
         log_message(f"Débogage : Envoi de la requête GET à {url}")
         response = session.get(url, headers=headers, timeout=15)
