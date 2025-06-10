@@ -50,6 +50,30 @@ def log_message(message):
     print(f"{timestamp} - {message}")
     sys.stdout.flush()
 
+# Fonction pour vérifier la validité du jeton OAuth
+def validate_access_token(access_token):
+    """Vérifie la validité du jeton OAuth en interrogeant l'API YouTube."""
+    if not access_token:
+        log_message("Erreur : Aucun jeton d'accès fourni")
+        return False
+    try:
+        url = "https://www.googleapis.com/oauth2/v3/tokeninfo"
+        params = {"access_token": access_token}
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        token_info = response.json()
+        if 'expires_in' in token_info and token_info['expires_in'] > 0:
+            log_message(f"Débogage : Jeton d'accès valide, expire dans {token_info['expires_in']} secondes")
+            return True
+        else:
+            log_message("Erreur : Jeton d'accès invalide ou expiré")
+            return False
+    except requests.exceptions.RequestException as e:
+        log_message(f"Erreur lors de la validation du jeton d'accès : {str(e)}")
+        if e.response:
+            log_message(f"Débogage : Code de statut de la validation : {e.response.status_code}, Réponse : {e.response.text[:500]}")
+        return False
+
 def process_url(channel_data, session, access_token):
     """Traite une URL, extrait les vidéos avec jeton OAuth."""
     results = []
@@ -62,7 +86,7 @@ def process_url(channel_data, session, access_token):
     log_message(f"Débogage : Traitement de l'URL {url} pour la chaîne {channel_data.get('title', 'Unknown')} (ID: {channel_id})")
 
     try:
-        # Ajouter le cookie CONSENT
+        # Ajouter le cookie CONSENT pour contourner la page de consentement
         session.cookies.set("CONSENT", "YES+srp.gws-20210601-0-RC2.fr+FX+123", domain=".youtube.com")
 
         headers = {
@@ -76,6 +100,15 @@ def process_url(channel_data, session, access_token):
         response.raise_for_status()
         html_content = response.text
         log_message(f"Débogage : Requête réussie pour {url}, taille du HTML : {len(html_content)} caractères")
+
+        # Vérifier si la page de consentement est toujours présente
+        if "Avant d'accéder à YouTube" in html_content or "Bevor Sie zu YouTube weitergehen" in html_content:
+            log_message(f"Débogage : Page de consentement détectée pour {url}")
+            html_filepath = os.path.join(error_html_dir, f"{channel_id}_cookie.html")
+            with open(html_filepath, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            log_message(f"Débogage : HTML de la page de consentement enregistré dans {html_filepath}")
+            return results
 
         # Ajouter un délai de 0,5 seconde après la requête
         time.sleep(0.5)
@@ -249,6 +282,13 @@ def main():
     parser.add_argument('--access-token', required=True, help='YouTube OAuth access token')
     args = parser.parse_args()
     access_token = args.access_token
+
+    # Vérifier la validité du jeton avant de procéder
+    log_message(f"Débogage : Début de la validation du jeton d'accès")
+    if not validate_access_token(access_token):
+        log_message("Erreur : Le jeton d'accès est invalide ou non vérifiable, abandon de l'exécution")
+        sys.exit(1)
+    log_message(f"Débogage : Jeton d'accès validé avec succès, poursuite de l'exécution")
 
     start_time = time.time()
     try:
