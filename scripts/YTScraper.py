@@ -101,7 +101,7 @@ def process_url(channel_data, session, access_token):
     url = f"https://www.youtube.com/channel/{channel_id}/streams"
     log_message(f"Débogage : Traitement de l'URL {url} pour la chaîne {channel_data.get('title', 'Unknown')} (ID: {channel_id})")
 
-try:
+    try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
             "Authorization": f"Bearer {access_token}"
