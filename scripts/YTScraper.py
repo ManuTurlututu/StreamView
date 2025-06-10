@@ -101,17 +101,10 @@ def process_url(channel_data, session, access_token):
     url = f"https://www.youtube.com/channel/{channel_id}/streams"
     log_message(f"Débogage : Traitement de l'URL {url} pour la chaîne {channel_data.get('title', 'Unknown')} (ID: {channel_id})")
 
-    try:
-        # Ajouter le cookie CONSENT pour contourner la page de consentement
-        session.cookies.set("CONSENT", "YES+srp.gws-20210601-0-RC2.fr+FX+123", domain=".youtube.com")
-
+try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-            "Authorization": f"Bearer {access_token}",
-            "Accept-Language": "en-US,en;q=0.9",  # Forcer la langue en anglais (US)
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1"  # Simuler une navigation par navigateur
+            "Authorization": f"Bearer {access_token}"
         }
         log_message(f"Débogage : Envoi de la requête GET à {url}")
         response = session.get(url, headers=headers, timeout=15)
