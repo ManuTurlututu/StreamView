@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+import argparse
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
@@ -19,7 +20,7 @@ load_dotenv()
 # URI MongoDB depuis .env
 MONGODB_URI = os.getenv('MONGODB_URI')
 if not MONGODB_URI:
-    print(f"[{datetime.now().isoformat()}] Erreur : MONGODB_URI manquant dans .env")
+    print("Erreur : MONGODB_URI manquant dans .env")
     sys.exit(1)
 
 # Connexion à MongoDB
@@ -28,9 +29,9 @@ try:
     db = client.get_database()  # Le nom de la base est dans l'URI
     youtube_channels_collection = db['youtubechannels']
     youtube_videos_collection = db['youtubeVideos']
-    print(f"[{datetime.now().isoformat()}] Connecté à MongoDB avec succès")
+    print("Connecté à MongoDB avec succès")
 except ConnectionFailure as e:
-    print(f"[{datetime.now().isoformat()}] Erreur de connexion à MongoDB : {str(e)}")
+    print(f"Erreur de connexion à MongoDB : {str(e)}")
     sys.exit(1)
 
 # Chemins des fichiers relatifs au script
@@ -43,14 +44,14 @@ os.makedirs(error_html_dir, exist_ok=True)
 
 # Fonction pour écrire dans le fichier de log
 def log_message(message):
-    timestamp = datetime.now().isoformat()
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(f"{timestamp} - {message}\n")
     print(f"{timestamp} - {message}")
     sys.stdout.flush()
 
-def process_url(channel_data, session):
-    """Traite une URL, extrait les vidéos sans jeton OAuth."""
+def process_url(channel_data, session, access_token):
+    """Traite une URL, extrait les vidéos avec jeton OAuth."""
     results = []
     channel_id = channel_data.get('channelId', '')
     if not channel_id:
@@ -58,38 +59,20 @@ def process_url(channel_data, session):
         return results
 
     url = f"https://www.youtube.com/channel/{channel_id}/streams"
+    log_message(f"Débogage : Traitement de l'URL {url} pour la chaîne {channel_data.get('title', 'Unknown')} (ID: {channel_id})")
+
     try:
-        # Générer un timestamp pour le cookie CONSENT
-        timestamp = str(int(time.time()))
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows Mozilla/5.0 (Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate",
-            "Cookie": f"CONSENT=YES+{timestamp}; SOCS=CAISE"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+            "Authorization": f"Bearer {access_token}"
         }
-        log_message(f"Débogage : Envoi de la requête GET à {url} avec cookie CONSENT=YES+{timestamp}")
-        response = session.get(url, headers=headers, timeout=15, allow_redirects=True)
-
-        # Log des redirections
-        if response.history:
-            log_message(f"Débogage : Redirections détectées pour {url} : {[r.url for r in response.history]}")
-
+        log_message(f"Débogage : Envoi de la requête GET à {url}")
+        response = session.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         html_content = response.text
         log_message(f"Débogage : Requête réussie pour {url}, taille du HTML : {len(html_content)} caractères")
 
-        # Vérifier si la page de consentement est présente
-        if "Bevor Sie zu YouTube weitergehen" in html_content or "Before you continue to YouTube" in html_content:
-            log_message(f"Débogage : Page de consentement détectée pour {url}")
-            html_filename = f"{channel_id}_consent_{int(time.time())}.html"
-            html_filepath = os.path.join(error_html_dir, html_filename)
-            with open(html_filepath, 'w', encoding='utf-8') as html_file:
-                html_file.write(html_content)
-            log_message(f"Débogage : HTML de consentement enregistré dans {html_filepath}")
-            return results
-
-        # Ajouter un délai de 0.5 seconde après la requête
+        # Ajouter un délai de 0,5 seconde après la requête
         time.sleep(0.5)
 
         # Extraire le nom de la chaîne depuis <title>
@@ -139,7 +122,7 @@ def process_url(channel_data, session):
                 try:
                     with open(html_filepath, 'w', encoding='utf-8') as html_file:
                         html_file.write(html_content)
-                    log_message(f"Débogage : HTML enregistré dans {html_filepath}")
+                    log_message(f"Débogage : HTML enregistré dans {html_filepath} pour analyse")
                 except Exception as e:
                     log_message(f"Débogage : Erreur lors de l'enregistrement du HTML dans {html_filepath} : {str(e)}")
 
@@ -202,7 +185,7 @@ def process_url(channel_data, session):
                 try:
                     with open(html_filepath, 'w', encoding='utf-8') as html_file:
                         html_file.write(html_content)
-                    log_message(f"Débogage : HTML enregistré dans {html_filepath}")
+                    log_message(f"Débogage : HTML enregistré dans {html_filepath} pour analyse")
                 except Exception as e:
                     log_message(f"Débogage : Erreur lors de l'enregistrement du HTML dans {html_filepath} : {str(e)}")
 
@@ -247,11 +230,6 @@ def process_url(channel_data, session):
             log_message(f"Résultat pour {channel_name} : {upcoming_count} upcoming, {live_count} live")
         else:
             log_message(f"Aucune vidéo trouvée pour {channel_name}")
-            html_filename = f"{channel_id}_no_streams_{int(time.time())}.html"
-            html_filepath = os.path.join(error_html_dir, html_filename)
-            with open(html_filepath, 'w', encoding='utf-8') as html_file:
-                html_file.write(html_content)
-            log_message(f"Débogage : HTML enregistré dans {html_filepath} pour analyse")
 
         return results
 
@@ -259,24 +237,26 @@ def process_url(channel_data, session):
         log_message(f"Erreur lors de la requête pour {url} : {str(e)}")
         if e.response:
             log_message(f"Code de statut : {e.response.status_code}, Réponse : {e.response.text[:500]}")
-            html_filename = f"{channel_id}_error_{int(time.time())}.html"
-            html_filepath = os.path.join(error_html_dir, html_filename)
-            with open(html_filepath, 'w', encoding='utf-8') as html_file:
-                html_file.write(e.response.text)
-            log_message(f"Débogage : HTML d'erreur enregistré dans {html_filepath}")
         return results
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--access-token', required=True, help='YouTube OAuth access token')
+    args = parser.parse_args()
+    access_token = args.access_token
+
     start_time = time.time()
     try:
         # Lire les chaînes depuis la collection MongoDB
         channels = list(youtube_channels_collection.find({}))
         log_message(f"{len(channels)} chaînes lues depuis la collection 'youtubechannels'")
+        for channel in channels:
+            log_message(f"Débogage : Chaîne lue - ID: {channel.get('channelId')}, Titre: {channel.get('title')}")
 
         video_results = []
         with requests.Session() as session:
             with ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_channel = {executor.submit(process_url, channel_data, session): channel_data for channel_data in channels}
+                future_to_channel = {executor.submit(process_url, channel_data, session, access_token): channel_data for channel_data in channels}
                 for future in as_completed(future_to_channel):
                     channel_videos = future.result()
                     video_results.extend(channel_videos)
