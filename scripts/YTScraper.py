@@ -16,10 +16,15 @@ sys.stderr.reconfigure(encoding='utf-8')
 # Charger les variables d'environnement depuis .env
 load_dotenv()
 
-# URI MongoDB depuis .env
+# URI MongoDB et jeton YouTube depuis .env
 MONGODB_URI = os.getenv('MONGODB_URI')
+YOUTUBE_ACCESS_TOKEN = os.getenv('YOUTUBE_ACCESS_TOKEN')
+
 if not MONGODB_URI:
-    print("Erreur : MONGODB_URI manquant dans .env")
+    print(f"[{datetime.utcnow().isoformat()}] Erreur : MONGODB_URI manquant dans .env")
+    sys.exit(1)
+if not YOUTUBE_ACCESS_TOKEN:
+    print(f"[{datetime.utcnow().isoformat()}] Erreur : YOUTUBE_ACCESS_TOKEN manquant dans les variables d'environnement")
     sys.exit(1)
 
 # Connexion à MongoDB
@@ -28,9 +33,9 @@ try:
     db = client.get_database()  # Le nom de la base est dans l'URI
     youtube_channels_collection = db['youtubechannels']
     youtube_videos_collection = db['youtubeVideos']
-    print("Connecté à MongoDB avec succès")
+    print(f"[{datetime.utcnow().isoformat()}] Connecté à MongoDB avec succès")
 except ConnectionFailure as e:
-    print(f"Erreur de connexion à MongoDB : {str(e)}")
+    print(f"[{datetime.utcnow().isoformat()}] Erreur de connexion à MongoDB : {str(e)}")
     sys.exit(1)
 
 # Chemins des fichiers relatifs au script
@@ -43,7 +48,7 @@ os.makedirs(error_html_dir, exist_ok=True)
 
 # Fonction pour écrire dans le fichier de log
 def log_message(message):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    timestamp = datetime.utcnow().isoformat()
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(f"{timestamp} - {message}\n")
     print(f"{timestamp} - {message}")
@@ -140,17 +145,17 @@ def process_url(channel_data, session, access_token):
             else:
                 log_message(f"Débogage : videoId non trouvé à la position {upcoming_pos}")
 
-            if title and video_url and video_thumbnail:
+            if title and video_url and video_id:
                 results.append({
                     "vidUrl": video_url,
-                    "vidTitle": title,
+                    "vidTitle": video_id,
                     "vidThumbnail": video_thumbnail,
                     "startTime": start_time,
                     "chUrl": url,
                     "chTitle": channel_name,
                     "chThumbnail": ch_thumbnail,
                     "status": "upcoming",
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.utcnow().isoformat()
                 })
                 log_message(f"Débogage : Vidéo upcoming ajoutée : {title}")
 
@@ -219,7 +224,7 @@ def process_url(channel_data, session, access_token):
                     "chTitle": channel_name,
                     "chThumbnail": ch_thumbnail,
                     "status": "live",
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.utcnow().isoformat()
                 })
                 log_message(f"Débogage : Vidéo live ajoutée : {title}")
 
@@ -241,14 +246,8 @@ def process_url(channel_data, session, access_token):
 def main():
     start_time = time.time()
     try:
-        # Récupérer le jeton YouTube depuis la collection tokenApi
-        token_api_collection = db['tokenApi']
-        youtube_token_doc = token_api_collection.find_one({'platform': 'youtube'})
-        if not youtube_token_doc or not youtube_token_doc.get('accessToken'):
-            log_message("Jeton YouTube manquant ou invalide dans la collection 'tokenApi'")
-            sys.exit(1)
-        access_token = youtube_token_doc['accessToken']
-        log_message("Jeton YouTube récupéré avec succès")
+        # Vérifier le jeton YouTube
+        log_message("Jeton YouTube récupéré avec succès depuis YOUTUBE_ACCESS_TOKEN")
 
         # Lire les chaînes depuis la collection MongoDB
         channels = list(youtube_channels_collection.find({}))
@@ -259,7 +258,7 @@ def main():
         video_results = []
         with requests.Session() as session:
             with ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_channel = {executor.submit(process_url, channel_data, session, access_token): channel_data for channel_data in channels}
+                future_to_channel = {executor.submit(process_url, channel_data, session, YOUTUBE_ACCESS_TOKEN): channel_data for channel_data in channels}
                 for future in as_completed(future_to_channel):
                     channel_videos = future.result()
                     video_results.extend(channel_videos)
