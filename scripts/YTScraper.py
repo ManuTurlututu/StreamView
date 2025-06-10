@@ -129,7 +129,7 @@ def process_url(channel_data, session, access_token):
             return results
 
         # Ajouter un délai de 0,5 seconde après la requête
-        time.sleep(5)
+        time.sleep(0.5)
 
         # Extraire le nom de la chaîne depuis <title>
         channel_name = channel_data.get('title', 'Unknown')
