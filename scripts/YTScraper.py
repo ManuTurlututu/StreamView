@@ -26,7 +26,7 @@ if not MONGODB_URI:
 # Connexion à MongoDB
 try:
     client = MongoClient(MONGODB_URI)
-    db = client.get_database()  # Le nom de la base est dans l'URI
+    db = client.get_database()
     youtube_channels_collection = db['youtubechannels']
     youtube_videos_collection = db['youtubeVideos']
     print("Connecté à MongoDB avec succès")
@@ -63,17 +63,14 @@ def validate_access_token(access_token):
         response.raise_for_status()
         token_info = response.json()
         
-        # Vérifier si 'error' est présent dans la réponse (jeton invalide)
         if 'error' in token_info or 'error_description' in token_info:
             log_message(f"Erreur : Jeton d'accès invalide - {token_info.get('error_description', 'Erreur non spécifiée')}")
             return False
         
-        # Vérifier la présence de 'expires_in' et le convertir en entier
         if 'expires_in' in token_info:
             try:
                 expires_in = int(token_info['expires_in'])
                 if expires_in > 0:
-                    log_message(f"Débogage : Jeton d'accès valide, expire dans {expires_in} secondes")
                     return True
                 else:
                     log_message("Erreur : Jeton d'accès expiré (expires_in <= 0)")
@@ -87,7 +84,7 @@ def validate_access_token(access_token):
     except requests.exceptions.RequestException as e:
         log_message(f"Erreur lors de la validation du jeton d'accès : {str(e)}")
         if e.response:
-            log_message(f"Débogage : Code de statut de la validation : {e.response.status_code}, Réponse : {e.response.text[:500]}")
+            log_message(f"Code de statut de la validation : {e.response.status_code}, Réponse : {e.response.text[:500]}")
         return False
 
 def process_url(channel_data, session, access_token):
@@ -99,96 +96,71 @@ def process_url(channel_data, session, access_token):
         return results
 
     url = f"https://www.youtube.com/channel/{channel_id}/streams"
-    log_message(f"Débogage : Traitement de l'URL {url} pour la chaîne {channel_data.get('title', 'Unknown')} (ID: {channel_id})")
-
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
             "Authorization": f"Bearer {access_token}"
         }
-        log_message(f"Débogage : Envoi de la requête GET à {url}")
         response = session.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         html_content = response.text
-        log_message(f"Débogage : Requête réussie pour {url}, taille du HTML : {len(html_content)} caractères")
 
-        # Vérifier si la page de consentement est toujours présente
         if "Avant d'accéder à YouTube" in html_content or "Bevor Sie zu YouTube weitergehen" in html_content:
-            log_message(f"Débogage : Page de consentement détectée pour {url}")
+            log_message(f"Page de consentement détectée pour {url}")
             html_filepath = os.path.join(error_html_dir, f"{channel_id}_cookie.html")
             with open(html_filepath, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-            log_message(f"Débogage : HTML de la page de consentement enregistré dans {html_filepath}")
+            log_message(f"HTML de la page de consentement enregistré dans {html_filepath}")
             return results
 
-        # Ajouter un délai de 0,5 seconde après la requête
         time.sleep(0.5)
 
-        # Extraire le nom de la chaîne depuis <title>
         channel_name = channel_data.get('title', 'Unknown')
         title_match = re.search(r'<title>(.*?)</title>', html_content, re.DOTALL)
         if title_match:
             raw_title = title_match.group(1).strip()
             channel_name = re.sub(r'\s*-\s*YouTube\s*$', '', raw_title, flags=re.IGNORECASE)
-            log_message(f"Débogage : Nom de la chaîne extrait : {channel_name}")
-        else:
-            log_message(f"Débogage : Aucun <title> trouvé dans le HTML pour {url}")
 
-        # Extraire la vignette de la chaîne depuis channel_data
         ch_thumbnail = channel_data.get('thumbnail', '')
-        log_message(f"Débogage : Vignette de la chaîne : {ch_thumbnail}")
 
-        # Vérifier la présence de vidéos à venir
         upcoming_matches = [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]
-        log_message(f"Débogage : {len(upcoming_matches)} segments 'upcomingEventData' trouvés pour {url}")
         channel_handle = channel_id
 
-        # Traiter les vidéos à venir
         for upcoming_pos in upcoming_matches:
-            log_message(f"Débogage : Analyse du segment upcoming à la position {upcoming_pos}")
             start_time_match = re.search(r'"startTime":"(\d+)"', html_content[upcoming_pos:upcoming_pos+100])
             if not start_time_match:
-                log_message(f"Débogage : startTime non trouvé à la position {upcoming_pos} pour {url}")
+                log_message(f"startTime non trouvé à la position {upcoming_pos} pour {url}")
                 continue
             start_time = start_time_match.group(1)
-            log_message(f"Débogage : startTime trouvé : {start_time}")
 
             title = ''
             video_thumbnail = ''
             video_url = ''
             search_start = max(0, upcoming_pos - 3000)
             segment_before = html_content[search_start:upcoming_pos]
-            log_message(f"Débogage : Segment analysé pour le titre (taille : {len(segment_before)} caractères)")
 
             title_search = re.search(r'"title":(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}\]|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})', segment_before, re.DOTALL)
             if title_search:
                 title = title_search.group(1) or title_search.group(2) or title_search.group(3)
-                log_message(f"Débogage : Titre trouvé : {title}")
             else:
-                log_message(f"Débogage : Titre non trouvé à la position {upcoming_pos} pour {url}")
+                log_message(f"Titre non trouvé à la position {upcoming_pos} pour {url}")
                 html_filename = f"{channel_handle}_{upcoming_pos}.html"
                 html_filepath = os.path.join(error_html_dir, html_filename)
                 try:
                     with open(html_filepath, 'w', encoding='utf-8') as html_file:
                         html_file.write(html_content)
-                    log_message(f"Débogage : HTML enregistré dans {html_filepath} pour analyse")
+                    log_message(f"HTML enregistré dans {html_filepath}")
                 except Exception as e:
-                    log_message(f"Débogage : Erreur lors de l'enregistrement du HTML dans {html_filepath} : {str(e)}")
+                    log_message(f"Erreur lors de l'enregistrement du HTML dans {html_filepath} : {str(e)}")
 
             thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', segment_before, re.DOTALL)
             if thumbnail_search:
                 video_thumbnail = thumbnail_search.group(1)
-                log_message(f"Débogage : Vignette vidéo trouvée : {video_thumbnail}")
-            else:
-                log_message(f"Débogage : Vignette vidéo non trouvée à la position {upcoming_pos}")
 
             video_id_search = re.search(r'"videoId":"([A-Za-z0-9_-]+)"', segment_before, re.DOTALL)
             if video_id_search:
                 video_id = video_id_search.group(1)
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
-                log_message(f"Débogage : videoId trouvé : {video_id}, URL : {video_url}")
-            else:
-                log_message(f"Débogage : videoId non trouvé à la position {upcoming_pos}")
 
             if title and video_url and video_thumbnail:
                 results.append({
@@ -202,20 +174,14 @@ def process_url(channel_data, session, access_token):
                     "status": "upcoming",
                     "timestamp": datetime.now().isoformat()
                 })
-                log_message(f"Débogage : Vidéo upcoming ajoutée : {title}")
 
-        # Vérifier la présence de vidéos en direct (live) avec "style":"LIVE"
         live_matches = [m.start() for m in re.finditer(r'"style":"LIVE"', html_content)]
-        log_message(f"Débogage : {len(live_matches)} segments 'style:LIVE' trouvés pour {url}")
-
         for live_pos in live_matches:
-            log_message(f"Débogage : Analyse du segment live à la position {live_pos}")
             title = ''
             video_thumbnail = ''
             video_url = ''
             search_start = max(0, live_pos - 10000)
             search_range = html_content[search_start:live_pos]
-            log_message(f"Débogage : Segment analysé pour le titre live (taille : {len(search_range)} caractères)")
 
             title_search = re.search(r'"title":\s*(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}\]|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})', search_range, re.DOTALL)
             if title_search:
@@ -223,40 +189,31 @@ def process_url(channel_data, session, access_token):
                 if title:
                     try:
                         title = title.encode().decode('utf-8', errors='replace')
-                        log_message(f"Débogage : Titre live trouvé : {title}")
                     except Exception as e:
-                        log_message(f"Débogage : Erreur d'encodage du titre à la position {live_pos} : {str(e)}")
+                        log_message(f"Erreur d'encodage du titre à la position {live_pos} : {str(e)}")
                         title = title.encode().decode('unicode_escape', errors='replace')
             else:
-                log_message(f"Débogage : Titre live non trouvé à la position {live_pos} dans {search_start}-{live_pos} pour {url}")
+                log_message(f"Titre live non trouvé à la position {live_pos} pour {url}")
                 html_filename = f"{channel_handle}_live_{live_pos}.html"
                 html_filepath = os.path.join(error_html_dir, html_filename)
                 try:
                     with open(html_filepath, 'w', encoding='utf-8') as html_file:
                         html_file.write(html_content)
-                    log_message(f"Débogage : HTML enregistré dans {html_filepath} pour analyse")
+                    log_message(f"HTML enregistré dans {html_filepath}")
                 except Exception as e:
-                    log_message(f"Débogage : Erreur lors de l'enregistrement du HTML dans {html_filepath} : {str(e)}")
+                    log_message(f"Erreur lors de l'enregistrement du HTML dans {html_filepath} : {str(e)}")
 
             thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', search_range, re.DOTALL)
             if thumbnail_search:
                 video_thumbnail = thumbnail_search.group(1)
                 video_thumbnail = video_thumbnail.encode().decode('utf-8', errors='replace')
-                log_message(f"Débogage : Vignette live trouvée : {video_thumbnail}")
-            else:
-                log_message(f"Débogage : Vignette live non trouvée à la position {live_pos}")
 
             video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]+)"', search_range)
             if video_ids:
                 video_id = video_ids[-1]
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
-                log_message(f"Débogage : videoId live trouvé : {video_id}, URL : {video_url}")
-                if re.search(r'"viewCountText":\s*{"runs":\[{"text":"[^"]+"},{"text":"watching"}]', search_range):
-                    log_message(f"Débogage : Confirmation que {video_id} est une vidéo live")
-                else:
-                    log_message(f"Débogage : Attention : Le videoId {video_id} peut ne pas correspondre à une vidéo live à la position {live_pos}")
             else:
-                log_message(f"Débogage : videoId live non trouvé à la position {live_pos} dans {search_start}-{live_pos} pour {url}")
+                log_message(f"videoId live non trouvé à la position {live_pos} pour {url}")
                 continue
 
             if title and video_url and video_thumbnail:
@@ -271,7 +228,6 @@ def process_url(channel_data, session, access_token):
                     "status": "live",
                     "timestamp": datetime.now().isoformat()
                 })
-                log_message(f"Débogage : Vidéo live ajoutée : {title}")
 
         upcoming_count = sum(1 for r in results if r["status"] == "upcoming")
         live_count = sum(1 for r in results if r["status"] == "live")
@@ -294,20 +250,14 @@ def main():
     args = parser.parse_args()
     access_token = args.access_token
 
-    # Vérifier la validité du jeton avant de procéder
-    log_message(f"Débogage : Début de la validation du jeton d'accès")
     if not validate_access_token(access_token):
         log_message("Erreur : Le jeton d'accès est invalide ou non vérifiable, abandon de l'exécution")
         sys.exit(1)
-    log_message(f"Débogage : Jeton d'accès validé avec succès, poursuite de l'exécution")
 
     start_time = time.time()
     try:
-        # Lire les chaînes depuis la collection MongoDB
         channels = list(youtube_channels_collection.find({}))
         log_message(f"{len(channels)} chaînes lues depuis la collection 'youtubechannels'")
-        for channel in channels:
-            log_message(f"Débogage : Chaîne lue - ID: {channel.get('channelId')}, Titre: {channel.get('title')}")
 
         video_results = []
         with requests.Session() as session:
@@ -317,9 +267,8 @@ def main():
                     channel_videos = future.result()
                     video_results.extend(channel_videos)
 
-        # Insérer les résultats dans la collection MongoDB
         if video_results:
-            youtube_videos_collection.delete_many({})  # Vider la collection avant insertion
+            youtube_videos_collection.delete_many({})
             youtube_videos_collection.insert_many(video_results)
             log_message(f"{len(video_results)} vidéos insérées dans la collection 'youtubeVideos'")
         else:
@@ -327,15 +276,15 @@ def main():
 
         upcoming_total = sum(1 for r in video_results if r["status"] == "upcoming")
         live_total = sum(1 for r in video_results if r["status"] == "live")
-        log_message(f"Nombre total de vidéos trouvées : {len(video_results)} (upcoming: {upcoming_total}, live: {live_total})")
+        log_message(f"Nombre total de vidéos : {len(video_results)} (upcoming: {upcoming_total}, live: {live_total})")
         log_message(f"Temps d'exécution : {time.time() - start_time:.2f} secondes")
 
     except OperationFailure as e:
-        log_message(f"Erreur MongoDB : {str(e)}")
+        log_message(f"Erreur MongoDB : {e}")
         sys.exit(1)
     except Exception as e:
-        log_message(f"Erreur générale : {str(e)}")
+        log_message(f"Erreur générale : {e}")
         sys.exit(1)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
