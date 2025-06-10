@@ -62,19 +62,27 @@ def process_url(channel_data, session):
     log_message(f"Débogage : Traitement de l'URL {url} pour la chaîne {channel_data.get('title', 'Unknown')} (ID: {channel_id})")
 
     try:
+        # Générer un timestamp pour le cookie CONSENT
+        timestamp = str(int(time.time()))
+        consent_cookie = f"CONSENT=YES+{timestamp}; SOCS=CAISE; VISITOR_INFO1_LIVE=abcdefgh12345678"
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
             "Accept-Encoding": "gzip, deflate, br",
-            "Cookie": "CONSENT=YES+cb.20250610-05-p0.en+FX+123"  # Cookie de consentement
+            "Cookie": consent_cookie
         }
-        log_message(f"Débogage : Envoi de la requête GET à {url}")
+        log_message(f"Débogage : Envoi de la requête GET à {url} avec cookie : {consent_cookie}")
         response = session.get(url, headers=headers, timeout=15, allow_redirects=True)
 
         # Log des redirections
         if response.history:
             log_message(f"Débogage : Redirections détectées pour {url} : {[r.url for r in response.history]}")
+
+        # Log des cookies reçus dans la réponse
+        response_cookies = response.cookies.get_dict()
+        log_message(f"Débogage : Cookies reçus dans la réponse : {response_cookies}")
 
         response.raise_for_status()
         html_content = response.text
@@ -295,7 +303,7 @@ def main():
             log_message("Aucune vidéo à insérer dans 'youtubeVideos'")
 
         upcoming_total = sum(1 for r in video_results if r["status"] == "upcoming")
-        live_total = sum(1 for r in video_results if r["status"] == "live")
+        live_total = sum(1 for r in results if r["status"] == "live")
         log_message(f"Nombre total de vidéos trouvées : {len(video_results)} (upcoming: {upcoming_total}, live: {live_total})")
         log_message(f"Temps d'exécution : {time.time() - start_time:.2f} secondes")
 
