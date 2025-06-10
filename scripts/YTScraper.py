@@ -62,9 +62,14 @@ def process_url(channel_data, session, access_token):
     log_message(f"Débogage : Traitement de l'URL {url} pour la chaîne {channel_data.get('title', 'Unknown')} (ID: {channel_id})")
 
     try:
+        # Ajouter le cookie CONSENT
+        session.cookies.set("CONSENT", "YES+srp.gws-20210601-0-RC2.fr+FX+123", domain=".youtube.com")
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-            "Authorization": f"Bearer {access_token}"
+            "Authorization": f"Bearer {access_token}",
+            "Accept-Language": "fr-FR,fr;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
         }
         log_message(f"Débogage : Envoi de la requête GET à {url}")
         response = session.get(url, headers=headers, timeout=15)
