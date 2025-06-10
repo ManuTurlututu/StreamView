@@ -10,7 +10,6 @@ const util = require("util");
 const rateLimit = require("express-rate-limit");
 const execPromise = util.promisify(exec);
 const { EventEmitter } = require('events');
-const crypto = require('crypto');
 const mongoose = require('mongoose');
 const notificationEmitter = new EventEmitter();
 
@@ -28,12 +27,6 @@ const youtubeRedirectUri = process.env.YOUTUBE_REDIRECT_URI;
 const youtubeScope = "https://www.googleapis.com/auth/youtube.readonly";
 
 const NOTIFICATIONS_FILE = path.join(__dirname, "notifications.json");
-const YOUTUBE_TOKENS_FILE = path.join(__dirname, "youtube_tokens.json");
-const TWITCH_TOKENS_FILE = path.join(__dirname, "twitch_tokens.json");
-
-// Clé de chiffrement depuis .env
-const ENCRYPTION_KEY = Buffer.from(process.env.ENCRYPTION_KEY, 'hex');
-const ALGORITHM = 'aes-256-cbc';
 
 // Variables globales pour stocker les jetons
 let youtubeAccessToken = null;
@@ -76,6 +69,17 @@ const youtubeChannelSchema = new mongoose.Schema({
 });
 
 const YoutubeChannel = mongoose.model('YoutubeChannel', youtubeChannelSchema);
+
+// Schéma pour les tokens API
+const tokenApiSchema = new mongoose.Schema({
+  platform: { type: String, required: true, unique: true }, // 'twitch' ou 'youtube'
+  accessToken: { type: String, required: true },
+  refreshToken: { type: String, required: true },
+  expiresIn: { type: Number, required: true },
+  lastUpdated: { type: Date, default: Date.now }
+});
+
+const TokenApi = mongoose.model('TokenApi', tokenApiSchema);
 
 // Charger les notifications depuis MongoDB (uniquement les 7 derniers jours)
 async function loadNotificationLog() {
@@ -128,6 +132,72 @@ async function saveYoutubeChannels(channels) {
   }
 }
 
+// Charger les jetons YouTube depuis MongoDB
+async function loadYoutubeTokens() {
+  try {
+    const tokenDoc = await TokenApi.findOne({ platform: 'youtube' });
+    if (tokenDoc) {
+      youtubeAccessToken = tokenDoc.accessToken;
+      youtubeRefreshToken = tokenDoc.refreshToken;
+      console.log(`[${new Date().toISOString()}] Jetons YouTube chargés depuis MongoDB: accessToken=${!!youtubeAccessToken}, refreshToken=${!!youtubeRefreshToken}`);
+    } else {
+      console.log(`[${new Date().toISOString()}] Aucun jeton YouTube trouvé dans MongoDB`);
+    }
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la lecture des jetons YouTube depuis MongoDB:`, error.message);
+  }
+}
+
+// Sauvegarder les jetons YouTube dans MongoDB
+async function saveYoutubeTokens() {
+  try {
+    const tokenData = {
+      platform: 'youtube',
+      accessToken: youtubeAccessToken,
+      refreshToken: youtubeRefreshToken,
+      expiresIn: 3600, // Ajustez cette valeur si nécessaire
+      lastUpdated: new Date()
+    };
+    await TokenApi.updateOne({ platform: 'youtube' }, tokenData, { upsert: true });
+    console.log(`[${new Date().toISOString()}] Jetons YouTube sauvegardés dans MongoDB`);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde des jetons YouTube dans MongoDB:`, error.message);
+  }
+}
+
+// Charger les jetons Twitch depuis MongoDB
+async function loadTwitchTokens() {
+  try {
+    const tokenDoc = await TokenApi.findOne({ platform: 'twitch' });
+    if (tokenDoc) {
+      twitchAccessToken = tokenDoc.accessToken;
+      twitchRefreshToken = tokenDoc.refreshToken;
+      console.log(`[${new Date().toISOString()}] Jetons Twitch chargés depuis MongoDB: accessToken=${!!twitchAccessToken}, refreshToken=${!!twitchRefreshToken}`);
+    } else {
+      console.log(`[${new Date().toISOString()}] Aucun jeton Twitch trouvé dans MongoDB`);
+    }
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la lecture des jetons Twitch depuis MongoDB:`, error.message);
+  }
+}
+
+// Sauvegarder les jetons Twitch dans MongoDB
+async function saveTwitchTokens() {
+  try {
+    const tokenData = {
+      platform: 'twitch',
+      accessToken: twitchAccessToken,
+      refreshToken: twitchRefreshToken,
+      expiresIn: 3600, // Ajustez cette valeur si nécessaire
+      lastUpdated: new Date()
+    };
+    await TokenApi.updateOne({ platform: 'twitch' }, tokenData, { upsert: true });
+    console.log(`[${new Date().toISOString()}] Jetons Twitch sauvegardés dans MongoDB`);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde des jetons Twitch dans MongoDB:`, error.message);
+  }
+}
+
 // Vérification des variables d'environnement
 if (!clientId || !clientSecret) {
   console.error(`[${new Date().toISOString()}] Erreur : TWITCH_CLIENT_ID ou TWITCH_CLIENT_SECRET manquant dans .env`);
@@ -135,10 +205,6 @@ if (!clientId || !clientSecret) {
 }
 if (!youtubeClientId || !youtubeClientSecret) {
   console.error(`[${new Date().toISOString()}] Erreur : YOUTUBE_CLIENT_ID ou YOUTUBE_CLIENT_SECRET manquant dans .env`);
-  process.exit(1);
-}
-if (!process.env.ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 32) {
-  console.error(`[${new Date().toISOString()}] Erreur : ENCRYPTION_KEY manquant ou invalide dans .env (doit être 64 caractères hexadécimaux)`);
   process.exit(1);
 }
 
@@ -159,93 +225,6 @@ app.use("/refresh-token", refreshTokenLimiter);
 // Stockage des paramètres de notification et chaînes YouTube
 let notificationSettings = [];
 let youtubeChannels = [];
-
-// Fonction pour chiffrer les données
-function encrypt(text) {
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
-  let encrypted = cipher.update(text, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  return { iv: iv.toString('hex'), encryptedData: encrypted };
-}
-
-// Fonction pour déchiffrer les données
-function decrypt(data, iv) {
-  const decipher = crypto.createDecipheriv(ALGORITHM, ENCRYPTION_KEY, Buffer.from(iv, 'hex'));
-  let decrypted = decipher.update(data, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
-}
-
-// Fonction pour charger les jetons YouTube depuis le fichier
-async function loadYoutubeTokens() {
-  try {
-    const data = await fs.readFile(YOUTUBE_TOKENS_FILE, "utf8");
-    const { iv, encryptedData } = JSON.parse(data);
-    if (!iv || !encryptedData) {
-      throw new Error("Fichier youtube_tokens.json vide ou invalide");
-    }
-    const decrypted = decrypt(encryptedData, iv);
-    const tokens = JSON.parse(decrypted);
-    youtubeAccessToken = tokens.accessToken || null;
-    youtubeRefreshToken = tokens.refreshToken || null;
-    console.log(`[${new Date().toISOString()}] Jetons YouTube chargés: accessToken=${!!youtubeAccessToken}, refreshToken=${!!youtubeRefreshToken}`);
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      await fs.writeFile(YOUTUBE_TOKENS_FILE, JSON.stringify({ iv: '', encryptedData: '' }));
-      console.log(`[${new Date().toISOString()}] Fichier youtube_tokens.json créé`);
-    } else {
-      console.error(`[${new Date().toISOString()}] Erreur lors de la lecture de youtube_tokens.json:`, error.message);
-    }
-  }
-}
-
-// Fonction pour sauvegarder les jetons YouTube dans le fichier
-async function saveYoutubeTokens() {
-  try {
-    const data = JSON.stringify({ accessToken: youtubeAccessToken, refreshToken: youtubeRefreshToken });
-    const encrypted = encrypt(data);
-    await fs.writeFile(YOUTUBE_TOKENS_FILE, JSON.stringify(encrypted, null, 2));
-    console.log(`[${new Date().toISOString()}] Jetons YouTube sauvegardés dans youtube_tokens.json`);
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde de youtube_tokens.json:`, error.message);
-  }
-}
-
-// Fonction pour charger les jetons Twitch depuis le fichier
-async function loadTwitchTokens() {
-  try {
-    const data = await fs.readFile(TWITCH_TOKENS_FILE, "utf8");
-    const { iv, encryptedData } = JSON.parse(data);
-    if (!iv || !encryptedData) {
-      throw new Error("Fichier twitch_tokens.json vide ou invalide");
-    }
-    const decrypted = decrypt(encryptedData, iv);
-    const tokens = JSON.parse(decrypted);
-    twitchAccessToken = tokens.accessToken || null;
-    twitchRefreshToken = tokens.refreshToken || null;
-    console.log(`[${new Date().toISOString()}] Jetons Twitch chargés: accessToken=${!!twitchAccessToken}, refreshToken=${!!twitchRefreshToken}`);
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      await fs.writeFile(TWITCH_TOKENS_FILE, JSON.stringify({ iv: '', encryptedData: '' }));
-      console.log(`[${new Date().toISOString()}] Fichier twitch_tokens.json créé`);
-    } else {
-      console.error(`[${new Date().toISOString()}] Erreur lors de la lecture de twitch_tokens.json:`, error.message);
-    }
-  }
-}
-
-// Fonction pour sauvegarder les jetons Twitch dans le fichier
-async function saveTwitchTokens() {
-  try {
-    const data = JSON.stringify({ accessToken: twitchAccessToken, refreshToken: twitchRefreshToken });
-    const encrypted = encrypt(data);
-    await fs.writeFile(TWITCH_TOKENS_FILE, JSON.stringify(encrypted, null, 2));
-    console.log(`[${new Date().toISOString()}] Jetons Twitch sauvegardés dans twitch_tokens.json`);
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde de twitch_tokens.json:`, error.message);
-  }
-}
 
 // Fonction pour charger les paramètres de notification depuis le fichier
 async function loadNotificationSettings() {
@@ -562,7 +541,7 @@ async function runPythonScript(accessToken) {
   }
 }
 
-// Planifier l'exécution toutes les 5 minutes
+// Planifier l'exécution toutes les 1 minute
 cron.schedule("*/1 * * * *", async () => {
   console.log(`[${new Date().toISOString()}] Lancement du script Python planifié...`);
   if (!youtubeAccessToken && youtubeRefreshToken) {
@@ -855,13 +834,13 @@ app.use((err, req, res, next) => {
 });
 
 // Endpoint pour déconnexion
-app.get("/logout-api", (req, res) => {
+app.get("/logout-api", async (req, res) => {
   twitchAccessToken = null;
   twitchRefreshToken = null;
   youtubeAccessToken = null;
   youtubeRefreshToken = null;
-  saveTwitchTokens();
-  saveYoutubeTokens();
+  await saveTwitchTokens();
+  await saveYoutubeTokens();
   console.log(`[${new Date().toISOString()}] Déconnexion API: tous les jetons réinitialisés`);
   res.redirect("/status");
 });
