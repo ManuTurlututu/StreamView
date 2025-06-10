@@ -528,7 +528,7 @@ async function runPythonScript(accessToken) {
   }
 
   const scriptPath = path.join(__dirname, "scripts", "YTScraper.py");
-  const command = `python3 ${scriptPath} --access-token ${accessToken}`;
+  const command = `python3 ${scriptPath};
 
   try {
     const { stdout, stderr } = await execPromise(command);
