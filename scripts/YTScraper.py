@@ -62,11 +62,27 @@ def validate_access_token(access_token):
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         token_info = response.json()
-        if 'expires_in' in token_info and token_info['expires_in'] > 0:
-            log_message(f"Débogage : Jeton d'accès valide, expire dans {token_info['expires_in']} secondes")
-            return True
+        
+        # Vérifier si 'error' est présent dans la réponse (jeton invalide)
+        if 'error' in token_info or 'error_description' in token_info:
+            log_message(f"Erreur : Jeton d'accès invalide - {token_info.get('error_description', 'Erreur non spécifiée')}")
+            return False
+        
+        # Vérifier la présence de 'expires_in' et le convertir en entier
+        if 'expires_in' in token_info:
+            try:
+                expires_in = int(token_info['expires_in'])
+                if expires_in > 0:
+                    log_message(f"Débogage : Jeton d'accès valide, expire dans {expires_in} secondes")
+                    return True
+                else:
+                    log_message("Erreur : Jeton d'accès expiré (expires_in <= 0)")
+                    return False
+            except ValueError:
+                log_message(f"Erreur : Impossible de convertir expires_in en entier : {token_info['expires_in']}")
+                return False
         else:
-            log_message("Erreur : Jeton d'accès invalide ou expiré")
+            log_message("Erreur : Champ 'expires_in' manquant dans la réponse de validation")
             return False
     except requests.exceptions.RequestException as e:
         log_message(f"Erreur lors de la validation du jeton d'accès : {str(e)}")
