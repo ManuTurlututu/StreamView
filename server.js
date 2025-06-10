@@ -34,8 +34,11 @@ let youtubeRefreshToken = null;
 let twitchAccessToken = null;
 let twitchRefreshToken = null;
 
-// Connexion à MongoDB (options obsolètes supprimées)
-mongoose.connect(process.env.MONGODB_URI)
+// Connexion à MongoDB
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
 .then(() => console.log(`[${new Date().toISOString()}] Connecté à MongoDB`))
 .catch(error => console.error(`[${new Date().toISOString()}] Erreur de connexion à MongoDB:`, error.message));
 
@@ -517,7 +520,7 @@ async function getYoutubeSubscriptions(accessToken) {
   }
 }
 
-// Fonction pour exécuter le script Python avec le jeton passé via une variable d'environnement
+// Fonction pour exécuter le script Python
 async function runPythonScript(accessToken) {
   if (!accessToken) {
     console.error(`[${new Date().toISOString()}] Aucun jeton d'accès YouTube disponible`);
@@ -525,11 +528,10 @@ async function runPythonScript(accessToken) {
   }
 
   const scriptPath = path.join(__dirname, "scripts", "YTScraper.py");
-  const command = `python3 ${scriptPath}`;
-  const env = { ...process.env, YOUTUBE_ACCESS_TOKEN: accessToken };
+  const command = `python3 ${scriptPath} --access-token ${accessToken}`;
 
   try {
-    const { stdout, stderr } = await execPromise(command, { env });
+    const { stdout, stderr } = await execPromise(command);
     console.log(`[${new Date().toISOString()}] Script Python exécuté avec succès: ${stdout}`);
     if (stderr) {
       console.error(`[${new Date().toISOString()}] Erreur stderr du script Python: ${stderr}`);
