@@ -5,7 +5,6 @@ import re
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
-import argparse
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
@@ -240,13 +239,17 @@ def process_url(channel_data, session, access_token):
         return results
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--access-token', required=True, help='YouTube OAuth access token')
-    args = parser.parse_args()
-    access_token = args.access_token
-
     start_time = time.time()
     try:
+        # Récupérer le jeton YouTube depuis la collection tokenApi
+        token_api_collection = db['tokenApi']
+        youtube_token_doc = token_api_collection.find_one({'platform': 'youtube'})
+        if not youtube_token_doc or not youtube_token_doc.get('accessToken'):
+            log_message("Jeton YouTube manquant ou invalide dans la collection 'tokenApi'")
+            sys.exit(1)
+        access_token = youtube_token_doc['accessToken']
+        log_message("Jeton YouTube récupéré avec succès")
+
         # Lire les chaînes depuis la collection MongoDB
         channels = list(youtube_channels_collection.find({}))
         log_message(f"{len(channels)} chaînes lues depuis la collection 'youtubechannels'")
