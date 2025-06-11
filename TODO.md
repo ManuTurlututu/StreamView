@@ -1,9 +1,14 @@
+>le refresh token ne se fait pas quand le python tourne sans actualisation du html
+>
+
+
+
 piste : PubSubHubbub pour youtube live
 
-ideée : un refresh du script python toute les 10min 
-ou quand une nouvelle chaine passe live
-on detecte les chaine live avec 
-un scrapinng ultralight de la main page tres frequent
+ideée : 
+- divisé en 2 le script python :
+  - 10min refresh schedules
+  - >1minute refresh live statut
 
-MIGRATION : https://render.com/
-https://streamview-qml8.onrender.com/auth/twitch/callback
+
+https://streamview0.onrender.com
