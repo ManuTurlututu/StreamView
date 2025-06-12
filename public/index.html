@@ -11,6 +11,9 @@
     <div class="container">
       <div class="tabs">
         <div class="tab active" data-tab="live">Live</div>
+        <div class="tab" data-tab="upcoming">
+          <img src="https://cdn-icons-png.flaticon.com/512/2989/2989849.png" alt="Upcoming Icon" /> Upcoming
+        </div>
         <div class="tab" data-tab="follow">
           <img
             src="https://cdn.glitch.global/381e5d8d-b90c-44f3-b3a2-2b1638838939/Twitch_logo.png?v=1748302658489"
@@ -49,6 +52,16 @@
           >Se connecter avec Twitch</a
         >
         <div id="channels-list"><div class="loader"></div></div>
+      </div>
+      <div class="tab-content" id="upcoming">
+        <div class="sort-search-container">
+          <select class="sort-selector" id="sort-upcoming-selector">
+            <option value="name">Sort: Name</option>
+            <option value="date">Sort: Date</option>
+          </select>
+          <input type="text" class="search-input" id="search-upcoming" placeholder="Search..." />
+        </div>
+        <div id="upcoming-channels-list"></div>
       </div>
       <div id="follow" class="tab-content">
         <div class="sort-search-container">

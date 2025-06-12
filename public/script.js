@@ -1,4 +1,7 @@
 const clientId = "fwff5k4xwotxh84zfgo3hla684twde";
+const countdownTimers = {};
+const avatarCache = new Map();
+
 let currentTwitchToken = null;
 let currentYoutubeToken = null;
 let currentStreams = [];
@@ -14,8 +17,10 @@ let searchLiveQuery = "";
 let searchFollowQuery = "";
 let searchYoutubeQuery = "";
 let searchNotificationsQuery = "";
-const avatarCache = new Map();
 let notificationSettings = new Map();
+let currentUpcomingStreams = [];
+let sortUpcomingMode = "name";
+let searchUpcomingQuery = "";
 
 function truncateTitle(title) {
   if (!title) return "Aucun titre";
@@ -75,6 +80,9 @@ document.querySelectorAll(".tab").forEach((tab) => {
       filterNotifications();
     } else if (tab.dataset.tab === "settings") {
       stopDurationUpdates();
+    } else if (tab.dataset.tab === "upcoming") {
+      stopDurationUpdates();
+      filterUpcomingStreams(searchUpcomingQuery);
     }
   });
 });
@@ -475,6 +483,206 @@ function showNotificationError(message) {
   }, 5000);
 }
 
+function filterUpcomingStreams(query) {
+  const filteredStreams = currentUpcomingStreams.filter(stream =>
+    stream.chTitle.toLowerCase().includes(query.toLowerCase()) || stream.vidTitle.toLowerCase().includes(query.toLowerCase())
+  );
+  const channelsList = document.getElementById('upcoming-channels-list');
+  channelsList.innerHTML = '';
+  filteredStreams.forEach(stream => {
+    const card = createUpcomingCard(stream);
+    channelsList.appendChild(card);
+  });
+}
+
+async function updateUpcomingStreams() {
+  const token = await getYoutubeAccessToken();
+  const loginButton = document.getElementById("youtube-login-button");
+  if (!token) {
+    console.log("Aucun jeton YouTube, affichage du bouton de connexion");
+    loginButton.style.display = "block";
+    document.getElementById("upcoming-channels-list").innerHTML = "";
+    updateLogoutButtonVisibility();
+    return;
+  }
+
+  loginButton.style.display = "none";
+  try {
+    const response = await fetch("/get-upcoming-videos");
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Échec de la récupération des vidéos à venir");
+    }
+    const videos = await response.json();
+    currentUpcomingStreams = videos;
+    const channelsList = document.getElementById("upcoming-channels-list");
+    channelsList.innerHTML = "";
+    videos.forEach(stream => {
+      const card = createUpcomingCard(stream);
+      channelsList.appendChild(card);
+    });
+  } catch (error) {
+    console.error("Erreur lors de la récupération des vidéos à venir :", error);
+    displayError("Erreur lors du chargement des vidéos à venir. Veuillez vous reconnecter.", "upcoming-channels-list");
+    loginButton.style.display = "block";
+    currentYoutubeToken = null;
+    updateLogoutButtonVisibility();
+  }
+}
+
+async function getUpcomingVideos() {
+  const token = await getYoutubeAccessToken();
+  const loginButton = document.getElementById("youtube-login-button");
+  if (!token) {
+    console.log("Aucun jeton YouTube, affichage du bouton de connexion");
+    loginButton.style.display = "block";
+    document.getElementById("upcoming-channels-list").innerHTML = "";
+    updateLogoutButtonVisibility();
+    return;
+  }
+
+  loginButton.style.display = "none";
+  try {
+    const response = await fetch("/get-upcoming-videos");
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Échec de la récupération des vidéos à venir");
+    }
+    const videos = await response.json();
+    currentUpcomingStreams = videos;
+    updateUpcomingStreams();
+  } catch (error) {
+    console.error("Erreur lors de la récupération des vidéos à venir :", error);
+    displayError("Erreur lors du chargement des vidéos à venir. Veuillez vous reconnecter.", "upcoming-channels-list");
+    loginButton.style.display = "block";
+    currentYoutubeToken = null;
+    updateLogoutButtonVisibility();
+  }
+}
+
+function sortUpcomingStreams(streams, sortValue) {
+  let sortedStreams = [...streams];
+  if (sortValue === 'name') {
+    sortedStreams.sort((a, b) => a.chTitle.localeCompare(b.chTitle));
+  } else if (sortValue === 'date') {
+    sortedStreams.sort((a, b) => parseInt(a.startTime) - parseInt(b.startTime));
+  }
+  return sortedStreams;
+}
+
+function createUpcomingCard(stream) {
+  const now = Date.now() / 1000; // Temps actuel en secondes
+  const startTime = parseInt(stream.startTime);
+  const isLive = startTime <= now;
+  const countdownId = `countdown-${stream._id}`; // ID unique basé sur MongoDB _id
+  const bellId = `bell-${stream._id}`;
+  const bellKey = `bell_${stream.chTitle}_${stream.startTime}`;
+  const isBellActive = localStorage.getItem(bellKey) === 'true';
+  const bellClass = isBellActive ? 'bell-button yellow' : 'bell-button';
+  const containerClass = isLive ? 'red-border' : (isBellActive ? 'yellow-border' : '');
+
+  const card = document.createElement("div");
+  card.className = `item-container ${containerClass}`;
+  card.innerHTML = `
+    <div class="header-row">
+      <a href="${stream.chUrl}" target="_blank">
+        <img src="${stream.chThumbnail}" alt="${stream.chTitle}" class="channel-img">
+      </a>
+      <div class="schedule-info">
+        <p class="text-gray-300 font-bold">${formatDate(stream.startTime)}</p>
+        <p id="${countdownId}" class="text-blue-400 font-bold">${isLive ? 'Live' : ''}</p>
+        <div id="${bellId}" class="${bellClass}" onclick="toggleBellColor('${bellId}', '${stream.chTitle}', '${stream.startTime}')">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+    <p class="text-gray-300 font-bold">${stream.chTitle}</p>
+    <a href="${stream.vidUrl}" target="_blank">
+      <img src="${stream.vidThumbnail}" alt="${stream.vidTitle}" class="thumbnail mb-2">
+    </a>
+    <a href="${stream.vidUrl}" target="_blank" class="text-gray-300 hover:text-blue-400">${stream.vidTitle}</a>
+  `;
+  if (!isLive) {
+    createCountdown(stream.startTime, countdownId, stream.vidUrl, bellId);
+  }
+  return card;
+}
+
+function formatDate(timestamp) {
+  const date = new Date(parseInt(timestamp) * 1000);
+  const options = { weekday: 'short', day: 'numeric', month: 'short' };
+  return date.toLocaleDateString('fr-FR', options).replace(',', '');
+}
+
+function createCountdown(timestamp, elementId, vidUrl, bellId) {
+  const targetTime = parseInt(timestamp) * 1000;
+  let hasOpened = false;
+
+  const updateCountdown = () => {
+    const now = Date.now();
+    const distance = targetTime - now;
+    const countdownElement = document.getElementById(elementId);
+    const itemContainer = countdownElement ? countdownElement.closest('.item-container') : null;
+    const bellButton = document.getElementById(bellId);
+
+    if (!countdownElement || !itemContainer || !bellButton) {
+      clearInterval(countdownTimers[elementId]);
+      delete countdownTimers[elementId];
+      return;
+    }
+
+    if (distance < 0) {
+      countdownElement.innerHTML = 'Live';
+      countdownElement.classList.remove('text-blue-400');
+      countdownElement.classList.add('text-red-500');
+      itemContainer.classList.remove('yellow-border');
+      itemContainer.classList.add('red-border');
+      bellButton.style.display = 'none';
+      return;
+    }
+
+    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+    countdownElement.innerHTML = `${days}j ${hours}h ${minutes}m ${seconds}s`;
+    countdownElement.classList.remove('text-red-500');
+    countdownElement.classList.add('text-blue-400');
+    itemContainer.classList.remove('red-border');
+    bellButton.style.display = 'flex';
+
+    const totalSeconds = Math.floor(distance / 1000);
+    if (totalSeconds <= 5 * 60 && bellButton.classList.contains('yellow') && !hasOpened) {
+      window.open(vidUrl, '_blank');
+      const alertSound = new Audio('Sound/tsar-bell.mp3');
+      alertSound.volume = 0.15;
+      alertSound.play().catch(e => console.error("Erreur lors de la lecture du son :", e.message));
+      hasOpened = true;
+    }
+  };
+
+  updateCountdown();
+  countdownTimers[elementId] = setInterval(updateCountdown, 1000);
+}
+
+function toggleBellColor(buttonId, chTitle, startTime) {
+  const button = document.getElementById(buttonId);
+  const itemContainer = button.closest('.item-container');
+  const bellKey = `bell_${chTitle}_${startTime}`;
+  const isActive = button.classList.toggle('yellow');
+  localStorage.setItem(bellKey, isActive);
+  if (!itemContainer.classList.contains('red-border')) {
+    itemContainer.classList.toggle('yellow-border', isActive);
+  }
+  if (isActive) {
+    const notifSound = new Audio('Sound/bell-Notif.mp3');
+    notifSound.play().catch(e => console.error("Erreur lors de la lecture du son :", e.message));
+  }
+}
+
 function formatStreamDuration(startedAt) {
   const startTime = new Date(startedAt).getTime();
   const now = Date.now();
@@ -489,32 +697,6 @@ function formatStreamDuration(startedAt) {
   if (minutes > 0 || hours > 0) parts.push(`${minutes}m`);
   parts.push(`${seconds}s`);
   return parts.join(" ");
-}
-
-function createChannelCard(stream, avatarUrl) {
-  const truncatedTitle = truncateTitle(stream.title);
-  const card = document.createElement("a");
-  card.className = "side-nav-card";
-  card.href = `https://www.twitch.tv/${stream.user_name.toLowerCase()}`;
-  card.target = "_blank";
-  card.setAttribute("data-user-id", stream.user_id);
-  card.innerHTML = `
-          <div class="avatar">
-              <img src="${avatarUrl}" alt="${stream.user_name}">
-          </div>
-          <div class="card-content">
-              <p class="channel-title">${stream.user_name}</p>
-              <p class="stream-title" title="${stream.title || "Aucun titre"}">${truncatedTitle}</p>
-              <p class="game-title">${stream.game_name || "Inconnu"}</p>
-              <p class="stream-duration">${formatStreamDuration(stream.started_at)}</p>
-              <div class="live-status">
-                  <span class="status-indicator"></span>
-                  Live
-                  <span class="viewer-count">${formatViewers(stream.viewer_count)} spectateurs</span>
-              </div>
-          </div>
-      `;
-  return card;
 }
 
 function createFollowedChannelCard(channel, avatarUrl, notificationsEnabled) {
@@ -660,10 +842,10 @@ function reorderChannels(channelsList, sortedItems, key, createCardFunction) {
 
 function filterStreams() {
   const channelsList = document.getElementById("channels-list");
-  const cards = channelsList.querySelectorAll(".side-nav-card");
+  const cards = channelsList.querySelectorAll(".item-container");
   cards.forEach((card) => {
     const channelName = card.querySelector(".channel-title").textContent.toLowerCase();
-    card.style.display = searchLiveQuery && !channelName.includes(searchLiveQuery.toLowerCase()) ? "none" : "flex";
+    card.style.display = searchLiveQuery && !channelName.includes(searchLiveQuery.toLowerCase()) ? "none" : "block";
   });
 }
 
@@ -732,31 +914,41 @@ async function getNotificationLogFromServer() {
 }
 
 function listenToNotifications() {
-  const eventSource = new EventSource('/notifications-stream');
+  let retryDelay = 1000; // Délai initial de 1 seconde
+  const maxDelay = 30000; // Délai maximum de 30 secondes
 
-  eventSource.onmessage = function(event) {
-    try {
-      const newNotification = JSON.parse(event.data);
-      console.log("Nouvelle notification reçue via SSE:", newNotification);
-      
-      // Ajouter la notification à notificationLog
-      notificationLog.unshift(newNotification);
-      
-      // Mettre à jour l'onglet notifications si actif
-      if (document.getElementById("notification-tab").classList.contains("active")) {
-        updateNotificationLog();
+  function connect() {
+    console.log(`[${new Date().toISOString()}] Tentative de connexion SSE à /notifications-stream`);
+    const eventSource = new EventSource('/notifications-stream');
+
+    eventSource.onopen = function() {
+      console.log(`[${new Date().toISOString()}] Connexion SSE établie`);
+      retryDelay = 1000; // Réinitialiser le délai en cas de succès
+    };
+
+    eventSource.onmessage = function(event) {
+      try {
+        const newNotification = JSON.parse(event.data);
+        console.log(`[${new Date().toISOString()}] Nouvelle notification reçue via SSE:`, newNotification);
+        notificationLog.unshift(newNotification);
+        if (document.getElementById("notification-tab").classList.contains("active")) {
+          updateNotificationLog();
+        }
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Erreur lors du traitement de la notification SSE:`, error);
       }
-    } catch (error) {
-      console.error("Erreur lors du traitement de la notification SSE:", error);
-    }
-  };
+    };
 
-  eventSource.onerror = function(error) {
-    console.error("Erreur SSE:", error);
-    eventSource.close();
-    // Réessayer après 5 secondes
-    setTimeout(listenToNotifications, 5000);
-  };
+    eventSource.onerror = function(error) {
+      console.error(`[${new Date().toISOString()}] Erreur SSE:`, error);
+      eventSource.close();
+      console.log(`[${new Date().toISOString()}] Reconnexion dans ${retryDelay / 1000} secondes...`);
+      setTimeout(connect, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, maxDelay);
+    };
+  }
+
+  connect();
 }
 
 async function showNotification(stream) {
@@ -988,6 +1180,25 @@ document.getElementById("sort-selector").addEventListener("change", (event) => {
   }
 });
 
+document.getElementById('search-upcoming').addEventListener('input', (event) => {
+  searchUpcomingQuery = event.target.value;
+  filterUpcomingStreams(searchUpcomingQuery);
+});
+
+document.getElementById("sort-upcoming-selector").addEventListener("change", (event) => {
+  console.log("Sort upcoming selector changed to:", event.target.value);
+  sortUpcomingMode = event.target.value;
+  if (currentUpcomingStreams.length > 0) {
+    const sortedStreams = sortUpcomingStreams([...currentUpcomingStreams], sortUpcomingMode);
+    const channelsList = document.getElementById("upcoming-channels-list");
+    reorderChannels(channelsList, sortedStreams, "vidUrl", (stream) => createUpcomingCard(stream));
+    currentUpcomingStreams = sortedStreams;
+    filterUpcomingStreams(searchUpcomingQuery);
+  } else {
+    console.log("Aucun stream à venir à trier");
+  }
+});
+
 document.getElementById("sort-follow-selector").addEventListener("change", (event) => {
   console.log("Sort follow selector changed to:", event.target.value);
   sortFollowMode = event.target.value;
@@ -1051,12 +1262,58 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+function truncateChannelName(channelName) {
+  return channelName.length > 20 ? `${String(channelName).slice(0, 20)}...` : channelName;
+}
+function truncateGameName(GameName) {
+  return GameName.length > 18 ? `${String(GameName).slice(0, 16)}...` : GameName;
+}
+
+function createChannelCard(stream, avatarUrl) {
+  const truncatedTitle = truncateTitle(stream.title);
+  const truncatedChannelName = truncateChannelName(stream.user_name);
+  const truncatedGameName = truncateGameName(stream.game_name);
+  const thumbnailUrl = stream.thumbnail_url
+    ? stream.thumbnail_url.replace('{width}', '1280').replace('{height}', '720')
+    : 'https://static-cdn.jtvnw.net/ttv-static/404_preview-1280x720.jpg';
+
+  const card = document.createElement('div');
+  card.className = `item-container red-border`;
+  card.setAttribute('data-user-id', stream.user_id); // Ajout de l'attribut data-user-id
+  card.innerHTML = `
+    <div class="header-row">
+      <a href="https://www.twitch.tv/${stream.user_name.toLowerCase()}" target="_blank">
+        <img src="${avatarUrl}" alt="${stream.user_name}" class="channel-img">
+      </a>
+      <div class="channel-info">
+        <p class="channel-title" title="${stream.user_name}">${truncatedChannelName}</p>
+        <p class="viewer-count">${formatViewers(stream.viewer_count)}</p>
+        <p class="stream-duration">${formatStreamDuration(stream.started_at)}</p>  
+        <p class="game-title" title="${stream.game_name || 'Inconnu'}">${truncatedGameName}</p>
+      </div>
+    </div>  
+    <a href="https://www.twitch.tv/${stream.user_name.toLowerCase()}" target="_blank"><img src="${thumbnailUrl}" alt="${stream.user_name} thumbnail" class="thumbnail"></a>
+    <div class="card-content">  
+      <p class="stream-title" title="${stream.title || 'Aucun titre'}">${truncatedTitle}</p>
+    </div>
+  `;
+  return card;
+}
+
 async function init() {
-  await Promise.all([getFollowedStreams(), getFollowedChannels(), getYoutubeChannels(), getNotificationLogFromServer()]);
+  await Promise.all([
+    getFollowedStreams(),
+    getFollowedChannels(),
+    getYoutubeChannels(),
+    getNotificationLogFromServer(),
+    getUpcomingVideos()
+  ]);
   setInterval(getFollowedStreams, 60000);
   setInterval(getFollowedChannels, 60 * 60 * 1000);
   setInterval(getYoutubeChannels, 60 * 60 * 1000);
-  listenToNotifications(); // Ajouter l'écouteur SSE pour les notifications
+  setInterval(getUpcomingVideos, 60000);
+  listenToNotifications();
 }
 
 init();
+
