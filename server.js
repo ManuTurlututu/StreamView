@@ -14,6 +14,14 @@ const mongoose = require('mongoose');
 const notificationEmitter = new EventEmitter();
 
 const app = express();
+const cors = require('cors');
+
+// Middleware
+app.use(cors({
+  origin: 'https://streamview0.loca.lt', // Remplacez par votre URL loca.lt ou '*' pour autoriser toutes les origines
+  methods: ['GET', 'POST'],
+}));
+
 
 // Configuration
 const clientId = process.env.TWITCH_CLIENT_ID;
@@ -35,10 +43,7 @@ let twitchAccessToken = null;
 let twitchRefreshToken = null;
 
 // Connexion à MongoDB
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
+mongoose.connect(process.env.MONGODB_URI)
 .then(() => console.log(`[${new Date().toISOString()}] Connecté à MongoDB`))
 .catch(error => console.error(`[${new Date().toISOString()}] Erreur de connexion à MongoDB:`, error.message));
 
@@ -80,6 +85,21 @@ const tokenApiSchema = new mongoose.Schema({
 });
 
 const TokenApi = mongoose.model('TokenApi', tokenApiSchema);
+
+// Schéma pour les vidéos YouTube
+const youtubeVideoSchema = new mongoose.Schema({
+  vidUrl: { type: String, required: true },
+  vidTitle: { type: String, required: true },
+  vidThumbnail: { type: String, required: true },
+  startTime: { type: String, required: true }, // Note : startTime est une chaîne, pas un nombre
+  chUrl: { type: String, required: true },
+  chTitle: { type: String, required: true },
+  chThumbnail: { type: String, required: true },
+  status: { type: String, required: true },
+  timestamp: { type: String, required: true }
+}, { collection: 'youtubeVideos' }); // Forcer le nom de la collection
+
+const YoutubeVideo = mongoose.model('YoutubeVideo', youtubeVideoSchema);
 
 // Charger les notifications depuis MongoDB (uniquement les 7 derniers jours)
 async function loadNotificationLog() {
@@ -781,6 +801,7 @@ app.post("/save-notification-log", async (req, res) => {
   try {
     await saveNotificationLog(notification);
     notificationEmitter.emit("new-notification", notification);
+    console.log(`[${new Date().toISOString()}] Notification émise:`, notification); // Log ajouté
     res.json({ success: true });
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Erreur lors de l’enregistrement de la notification:`, error.message);
@@ -817,7 +838,13 @@ app.get('/notifications-stream', (req, res) => {
 
   notificationEmitter.on('new-notification', listener);
 
+  // Ping toutes les 15 secondes pour maintenir la connexion
+  const pingInterval = setInterval(() => {
+    res.write(': ping\n\n'); // Commentaire vide pour garder la connexion active
+  }, 15000);
+
   req.on('close', () => {
+    clearInterval(pingInterval); // Nettoyer l'intervalle quand la connexion se ferme
     notificationEmitter.off('new-notification', listener);
   });
 });
@@ -833,6 +860,19 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Erreur serveur interne" });
 });
 
+// Endpoint pour récupérer les vidéos YouTube à venir
+app.get("/get-upcoming-videos", async (req, res) => {
+  console.log(`[${new Date().toISOString()}] Requête /get-upcoming-videos`);
+  try {
+    const upcomingVideos = await YoutubeVideo.find({ status: "upcoming" }).sort({ startTime: 1 });
+    console.log(`[${new Date().toISOString()}] Vidéos à venir récupérées: ${upcomingVideos.length}`);
+    res.json(upcomingVideos);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des vidéos à venir:`, error.message);
+    res.status(500).json({ error: "Erreur serveur lors de la récupération des vidéos à venir" });
+  }
+});
+
 // Endpoint pour déconnexion
 app.get("/logout-api", async (req, res) => {
   twitchAccessToken = null;
@@ -842,7 +882,7 @@ app.get("/logout-api", async (req, res) => {
   await saveTwitchTokens();
   await saveYoutubeTokens();
   console.log(`[${new Date().toISOString()}] Déconnexion API: tous les jetons réinitialisés`);
-  res.redirect("/status");
+  res.redirect("/");
 });
 
 // URL de votre application Render
