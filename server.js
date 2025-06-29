@@ -41,6 +41,7 @@ let youtubeAccessToken = null;
 let youtubeRefreshToken = null;
 let twitchAccessToken = null;
 let twitchRefreshToken = null;
+let twitchUserId = null;
 
 // Connexion à MongoDB
 mongoose.connect(process.env.MONGODB_URI)
@@ -77,9 +78,10 @@ const YoutubeChannel = mongoose.model('YoutubeChannel', youtubeChannelSchema);
 
 // Schéma pour les tokens API
 const tokenApiSchema = new mongoose.Schema({
-  platform: { type: String, required: true, unique: true }, // 'twitch' ou 'youtube'
+  platform: { type: String, required: true, unique: true },
   accessToken: { type: String, required: true },
   refreshToken: { type: String, required: true },
+  userId: { type: String }, // Ajout pour Twitch
   expiresIn: { type: Number, required: true },
   lastUpdated: { type: Date, default: Date.now }
 });
@@ -100,6 +102,40 @@ const youtubeVideoSchema = new mongoose.Schema({
 }, { collection: 'youtubeVideos' }); // Forcer le nom de la collection
 
 const YoutubeVideo = mongoose.model('YoutubeVideo', youtubeVideoSchema);
+
+// Schéma pour la collection Live (Twitch et YouTube)
+const liveSchema = new mongoose.Schema({
+  platform: { type: String, required: true, enum: ['twitch', 'youtube'] }, // Plateforme : twitch ou youtube
+  user_id: { type: String, required: true }, // ID unique (user_id pour Twitch, _id pour YouTube)
+  user_name: { type: String, required: true }, // Nom de la chaîne (user_name pour Twitch, chTitle pour YouTube)
+  title: { type: String, required: true }, // Titre du stream (title pour Twitch, vidTitle pour YouTube)
+  thumbnail_url: { type: String, required: true }, // URL de la miniature (thumbnail_url pour Twitch, vidThumbnail pour YouTube)
+  avatar_url: { type: String, required: true }, // URL de l'avatar (profile_image_url pour Twitch, chThumbnail pour YouTube)
+  viewer_count: { type: Number, default: 0 }, // Nombre de spectateurs (viewer_count pour Twitch, 0 pour YouTube)
+  started_at: { type: Number, required: true }, // Timestamp de début (timestamp de started_at pour Twitch, startTime pour YouTube)
+  game_name: { type: String, default: "Inconnu" }, // Nom du jeu (game_name pour Twitch, "Inconnu" pour YouTube)
+  stream_url: { type: String, required: true }, // URL du stream (twitch.tv/user_name pour Twitch, vidUrl pour YouTube)
+  timestamp: { type: Number, required: true } // Timestamp de la mise à jour
+}, { collection: 'liveStreams', timestamps: true });
+
+const Live = mongoose.model('Live', liveSchema);
+
+// Sauvegarder les streams dans la collection Live
+async function saveLiveStreams(streams) {
+  try {
+    const operations = streams.map(stream => ({
+      updateOne: {
+        filter: { platform: stream.platform, user_id: stream.user_id },
+        update: { $set: stream },
+        upsert: true
+      }
+    }));
+    await Live.bulkWrite(operations);
+    console.log(`[${new Date().toISOString()}] Streams sauvegardés dans la collection Live: ${streams.length} streams`);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde des streams dans Live:`, error.message);
+  }
+}
 
 // Charger les notifications depuis MongoDB (uniquement les 7 derniers jours)
 async function loadNotificationLog() {
@@ -152,6 +188,145 @@ async function saveYoutubeChannels(channels) {
   }
 }
 
+// Fonction pour synchroniser les vidéos live YouTube avec liveStreams
+async function syncYoutubeLiveVideos() {
+  try {
+    // Récupérer les vidéos live de youtubeVideos
+    const liveVideos = await YoutubeVideo.find({ status: "live" });
+    console.log(`[${new Date().toISOString()}] Récupéré ${liveVideos.length} vidéos live YouTube`);
+
+    // Formatter les vidéos pour correspondre au schéma de liveStreams
+    const formattedVideos = liveVideos.map(video => ({
+      platform: 'youtube',
+      user_id: video.chUrl.split('/channel/')[1] || 'unknown', // Extraire l'ID du channel
+      user_name: video.chTitle || 'Inconnu',
+      title: video.vidTitle || 'Aucun titre',
+      thumbnail_url: video.vidThumbnail || 'https://i.ytimg.com/img/no_thumbnail.jpg',
+      avatar_url: video.chThumbnail || 'https://yt3.ggpht.com/ytc/default-channel-img.jpg',
+      viewer_count: 0, // Placeholder pour le nombre de viewers
+      started_at: parseInt(video.startTime) || Date.now(), // Timestamp de début
+      game_name: 'Inconnu', // Placeholder
+      stream_url: video.vidUrl,
+      timestamp: Date.now()
+    }));
+
+    // Sauvegarder les vidéos live dans liveStreams
+    if (formattedVideos.length > 0) {
+      const operations = formattedVideos.map(video => ({
+        updateOne: {
+          filter: { platform: 'youtube', user_id: video.user_id },
+          update: { $set: video },
+          upsert: true // Insère si ça n'existe pas, met à jour sinon
+        }
+      }));
+      await Live.bulkWrite(operations);
+      console.log(`[${new Date().toISOString()}] ${formattedVideos.length} vidéos live YouTube synchronisées dans liveStreams`);
+    } else {
+      console.log(`[${new Date().toISOString()}] Aucune vidéo live YouTube à synchroniser`);
+    }
+
+    // Supprimer les vidéos YouTube non live de liveStreams
+    const liveUserIds = formattedVideos.map(video => video.user_id);
+    await Live.deleteMany({
+      platform: 'youtube',
+      user_id: { $nin: liveUserIds }
+    });
+    console.log(`[${new Date().toISOString()}] Vidéos YouTube non live supprimées de liveStreams (user_ids non présents: ${liveUserIds.length ? liveUserIds.join(', ') : 'tous'})`);
+
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la synchronisation des vidéos live YouTube:`, error.message);
+  }
+}
+
+async function syncTwitchLiveStreams() {
+  try {
+    // Vérifier si les jetons et l'ID utilisateur sont disponibles
+    if (!twitchAccessToken || !twitchUserId) {
+      console.log(`[${new Date().toISOString()}] Jeton d'accès ou userId Twitch manquant, tentative de rafraîchissement...`);
+      if (!twitchRefreshToken) {
+        throw new Error("Aucun refresh_token Twitch disponible");
+      }
+      const { accessToken: newAccessToken } = await refreshAccessToken(twitchRefreshToken);
+      twitchAccessToken = newAccessToken;
+      await saveTwitchTokens();
+    }
+
+    // Récupérer les streams Twitch en direct
+    const followedStreams = await getFollowedStreams(twitchAccessToken);
+    console.log(`[${new Date().toISOString()}] Récupéré ${followedStreams.data?.length || 0} streams Twitch en direct`);
+
+    // Formatter les streams pour correspondre au schéma Live
+    const formattedStreams = followedStreams.data?.map(stream => ({
+      platform: 'twitch',
+      user_id: stream.user_id,
+      user_name: stream.user_name || 'Inconnu',
+      title: stream.title || 'Aucun titre',
+      thumbnail_url: stream.thumbnail_url || 'https://static-cdn.jtvnw.net/ttv-static/404_preview.jpg',
+      avatar_url: stream.profile_image_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/default_profile_image.png',
+      viewer_count: stream.viewer_count || 0,
+      started_at: new Date(stream.started_at).getTime(),
+      game_name: stream.game_name || 'Inconnu',
+      stream_url: `https://www.twitch.tv/${stream.user_name}`,
+      timestamp: Date.now()
+    })) || [];
+
+    // Sauvegarder les streams en direct
+    if (formattedStreams.length > 0) {
+      await saveLiveStreams(formattedStreams);
+    } else {
+      console.log(`[${new Date().toISOString()}] Aucun stream Twitch en direct à sauvegarder`);
+    }
+
+    // Supprimer les streams Twitch non live
+    const liveUserIds = formattedStreams.map(stream => stream.user_id);
+    await Live.deleteMany({
+      platform: 'twitch',
+      user_id: { $nin: liveUserIds }
+    });
+    console.log(`[${new Date().toISOString()}] Streams Twitch non live supprimés (user_ids non présents: ${liveUserIds.length ? liveUserIds.join(', ') : 'tous'})`);
+
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la synchronisation des streams Twitch:`, error.message);
+    if (error.response) {
+      console.error(`[${new Date().toISOString()}] Détails de l’erreur API:`, error.response.status, error.response.data);
+    }
+  }
+}
+
+async function getFollowedStreams(accessToken, cursor = null) {
+  if (!twitchUserId) {
+    throw new Error("Aucun ID utilisateur Twitch disponible");
+  }
+  let allStreams = [];
+  let nextCursor = cursor;
+
+  do {
+    const params = { user_id: twitchUserId, first: 100 };
+    if (nextCursor) params.after = nextCursor;
+
+    try {
+      const response = await axios.get("https://api.twitch.tv/helix/streams/followed", {
+        headers: {
+          "Client-ID": process.env.TWITCH_CLIENT_ID,
+          Authorization: `Bearer ${accessToken}`,
+        },
+        params,
+      });
+      allStreams = allStreams.concat(response.data.data || []);
+      nextCursor = response.data.pagination?.cursor || null;
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des streams Twitch:`, error.message);
+      if (error.response) {
+        console.error(`[${new Date().toISOString()}] Détails de l’erreur API:`, error.response.status, error.response.data);
+      }
+      throw error;
+    }
+  } while (nextCursor);
+
+  console.log(`[${new Date().toISOString()}] Récupéré ${allStreams.length} streams Twitch en direct`);
+  return { data: allStreams };
+}
+
 // Charger les jetons YouTube depuis MongoDB
 async function loadYoutubeTokens() {
   try {
@@ -192,7 +367,8 @@ async function loadTwitchTokens() {
     if (tokenDoc) {
       twitchAccessToken = tokenDoc.accessToken;
       twitchRefreshToken = tokenDoc.refreshToken;
-      console.log(`[${new Date().toISOString()}] Jetons Twitch chargés depuis MongoDB: accessToken=${!!twitchAccessToken}, refreshToken=${!!twitchRefreshToken}`);
+      twitchUserId = tokenDoc.userId; // Correction : utiliser tokenDoc au lieu de twitchTokens
+      console.log(`[${new Date().toISOString()}] Jetons Twitch chargés depuis MongoDB: accessToken=${!!twitchAccessToken}, refreshToken=${!!twitchRefreshToken}, userId=${!!twitchUserId}`);
     } else {
       console.log(`[${new Date().toISOString()}] Aucun jeton Twitch trouvé dans MongoDB`);
     }
@@ -361,42 +537,61 @@ app.get("/auth/twitch", (req, res) => {
 
 // Endpoint pour gérer le callback OAuth Twitch
 app.get("/auth/twitch/callback", async (req, res) => {
-  const code = req.query.code;
-  if (!code) {
-    console.error(`[${new Date().toISOString()}] Aucun code fourni dans /auth/twitch/callback`);
-    return res.status(400).json({ error: "Aucun code fourni" });
-  }
-
-  try {
-    const response = await axios.post(
-      "https://id.twitch.tv/oauth2/token",
-      null,
-      {
-        params: {
-          client_id: clientId,
-          client_secret: clientSecret,
-          code: code,
-          grant_type: "authorization_code",
-          redirect_uri: redirectUri,
-        },
-      }
-    );
-
-    const { access_token, refresh_token, expires_in } = response.data;
-    if (!access_token || !refresh_token) {
-      throw new Error("Aucun jeton d’accès ou refresh_token reçu");
+    const { code } = req.query;
+    if (!code) {
+        console.error(`[${new Date().toISOString()}] Aucun code fourni dans /auth/twitch/callback`);
+        return res.status(400).send("Aucun code d'autorisation fourni");
     }
 
-    twitchAccessToken = access_token;
-    twitchRefreshToken = refresh_token;
-    await saveTwitchTokens();
+    try {
+        console.log(`[${new Date().toISOString()}] Requête /auth/twitch/callback avec code: ${code}`);
+        const tokenResponse = await axios.post("https://id.twitch.tv/oauth2/token", null, {
+            params: {
+                client_id: process.env.TWITCH_CLIENT_ID,
+                client_secret: process.env.TWITCH_CLIENT_SECRET,
+                code,
+                grant_type: "authorization_code",
+                redirect_uri: `${process.env.APP_URL}/auth/twitch/callback`,
+            },
+        });
+        const { access_token, refresh_token } = tokenResponse.data;
+        console.log(`[${new Date().toISOString()}] Jetons Twitch reçus: access_token=${!!access_token}, refresh_token=${!!refresh_token}`);
 
-    console.log(`[${new Date().toISOString()}] Authentification Twitch réussie`);
-    res.redirect("/index.html");
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de l’échange du jeton Twitch:`, error.message);
-    res.status(500).json({ error: "Erreur lors de l’authentification Twitch" });
-  }
+        // Récupérer l'ID utilisateur
+        const userResponse = await axios.get("https://api.twitch.tv/helix/users", {
+            headers: {
+                "Client-ID": process.env.TWITCH_CLIENT_ID,
+                Authorization: `Bearer ${access_token}`,
+            },
+        });
+        const userId = userResponse.data.data[0]?.id;
+        console.log(`[${new Date().toISOString()}] ID utilisateur Twitch récupéré: ${userId}`);
+
+        if (!userId) {
+            throw new Error("Impossible de récupérer l'ID utilisateur Twitch");
+        }
+
+        // Stocker les jetons et l'ID utilisateur dans MongoDB
+        await TokenApi.updateOne(
+            { platform: 'twitch' },
+            { $set: { accessToken: access_token, refreshToken: refresh_token, userId, expiresIn: 3600, lastUpdated: new Date() } },
+            { upsert: true }
+        );
+        console.log(`[${new Date().toISOString()}] Jetons et userId sauvegardés dans MongoDB`);
+
+        twitchAccessToken = access_token;
+        twitchRefreshToken = refresh_token;
+        twitchUserId = userId;
+
+        console.log(`[${new Date().toISOString()}] Authentification Twitch réussie, userId: ${userId}`);
+        res.redirect("/");
+    } catch (error) {
+        console.error(`[${new Date().toISOString()}] Erreur dans /auth/twitch/callback:`, error.message);
+        if (error.response) {
+            console.error(`[${new Date().toISOString()}] Détails de l'erreur API:`, error.response.status, error.response.data);
+        }
+        res.status(500).send("Erreur lors de l'authentification Twitch");
+    }
 });
 
 // Endpoint pour initier l'authentification YouTube
@@ -561,25 +756,6 @@ async function runPythonScript(accessToken) {
   }
 }
 
-// Planifier l'exécution toutes les 1 minute
-cron.schedule("*/1 * * * *", async () => {
-  console.log(`[${new Date().toISOString()}] Lancement du script Python planifié...`);
-  if (!youtubeAccessToken && youtubeRefreshToken) {
-    console.log(`[${new Date().toISOString()}] Jeton d'accès manquant, tentative de rafraîchissement...`);
-    try {
-      const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(youtubeRefreshToken);
-      youtubeAccessToken = newAccessToken;
-    } catch (error) {
-      console.error(`[${new Date().toISOString()}] Échec du rafraîchissement du jeton YouTube:`, error.message);
-    }
-  }
-  if (youtubeAccessToken) {
-    await runPythonScript(youtubeAccessToken);
-  } else {
-    console.error(`[${new Date().toISOString()}] Impossible d'exécuter le script: aucun jeton disponible`);
-  }
-});
-
 // Endpoint pour déclencher manuellement le script Python
 app.post("/run-python", async (req, res) => {
   if (!youtubeAccessToken && youtubeRefreshToken) {
@@ -604,7 +780,6 @@ app.post("/run-python", async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-
 // Endpoint pour récupérer le jeton Twitch
 app.get("/get-token", async (req, res) => {
   if (!twitchAccessToken && twitchRefreshToken) {
@@ -860,18 +1035,29 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Erreur serveur interne" });
 });
 
-// Endpoint pour récupérer les vidéos YouTube à venir
-app.get("/get-upcoming-videos", async (req, res) => {
-  console.log(`[${new Date().toISOString()}] Requête /get-upcoming-videos`);
+app.get("/get-youtube-videos", async (req, res) => {
+  console.log(`[${new Date().toISOString()}] Requête /get-youtube-videos`);
   try {
     const videos = await YoutubeVideo.find({
-      status: { $in: ["upcoming", "live"] }
+      status: "upcoming"
     }).sort({ startTime: 1 });
     console.log(`[${new Date().toISOString()}] Vidéos récupérées: ${videos.length} (upcoming + live)`);
     res.json(videos);
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des vidéos:`, error.message);
     res.status(500).json({ error: "Erreur serveur lors de la récupération des vidéos" });
+  }
+});
+
+app.get("/get-live-streams", async (req, res) => {
+  console.log(`[${new Date().toISOString()}] Requête /get-live-streams`);
+  try {
+    const streams = await Live.find({}).sort({ started_at: -1 });
+    console.log(`[${new Date().toISOString()}] Streams récupérés: ${streams.length}`);
+    res.json(streams);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des streams:`, error.message);
+    res.status(500).json({ error: "Erreur serveur lors de la récupération des streams" });
   }
 });
 
@@ -890,7 +1076,38 @@ app.get("/logout-api", async (req, res) => {
 // URL de votre application Render
 const APP_URL = process.env.APP_URL || 'https://your-app-name.onrender.com';
 
-// Configurer un cron job pour pinger l'application toutes les 10 minutes
+// cron job python
+cron.schedule("*/1 * * * *", async () => {
+  console.log(`[${new Date().toISOString()}] Lancement du script Python planifié...`);
+  if (!youtubeAccessToken && youtubeRefreshToken) {
+    console.log(`[${new Date().toISOString()}] Jeton d'accès manquant, tentative de rafraîchissement...`);
+    try {
+      const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(youtubeRefreshToken);
+      youtubeAccessToken = newAccessToken;
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] Échec du rafraîchissement du jeton YouTube:`, error.message);
+    }
+  }
+  if (youtubeAccessToken) {
+    await runPythonScript(youtubeAccessToken);
+  } else {
+    console.error(`[${new Date().toISOString()}] Impossible d'exécuter le script: aucun jeton disponible`);
+  }
+});
+
+// cron job syncYoutubeLiveVideos
+cron.schedule('*/1 * * * *', async () => {
+  console.log(`[${new Date().toISOString()}] Début de la synchronisation des vidéos live YouTube...`);
+  await syncYoutubeLiveVideos();
+});
+
+// Cron job Twitch
+cron.schedule("*/1 * * * *", async () => {
+  console.log(`[${new Date().toISOString()}] Début de la synchronisation des streams Twitch...`);
+  await syncTwitchLiveStreams();
+});
+
+// cron job autoping pour eviter le spindown
 cron.schedule('*/10 * * * *', async () => {
   try {
     const response = await axios.get(APP_URL);

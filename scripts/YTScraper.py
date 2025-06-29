@@ -36,18 +36,10 @@ except ConnectionFailure as e:
 
 # Chemins des fichiers relatifs au script
 base_dir = os.path.dirname(__file__)
-log_file = os.path.join(base_dir, 'pyLog.txt')
-error_html_dir = os.path.join(base_dir, '..', 'ErrorHTML')
-
-# Créer le répertoire error_html_dir si nécessaire
-os.makedirs(error_html_dir, exist_ok=True)
 
 # Fonction pour écrire dans le fichier de log
 def log_message(message):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    with open(log_file, 'a', encoding='utf-8') as f:
-        f.write(f"{timestamp} - {message}\n")
-    print(f"{timestamp} - {message}")
+    print(message)
     sys.stdout.flush()
 
 # Fonction pour vérifier la validité du jeton OAuth
@@ -99,7 +91,8 @@ def process_url(channel_data, session, access_token):
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-            "Authorization": f"Bearer {access_token}"
+            "Authorization": f"Bearer {access_token}",
+            "Cookie": "VISITOR_PRIVACY_METADATA=CgJGUhIhEh0SGwsMDg8QERITFBUWFxgZGhscHR4fICEiIyQlJiA4;__Secure-3PSID=g.a000xwgGsbNiUCStdKDpoe_ea3fTdDxVld8vBg7r7mHTaaq0mmo5IsjTxFyTUDa0XqsdRvHlmwACgYKARcSARISFQHGX2Mibn7h4M1Gg8haSPPOa7xpJxoVAUF8yKo2Z7B12H3WN5-R77woTGGL0076;SIDCC=AKEyXzV3o8svMOHt-cJP4ZC6pn7JLXV0SOd1HrmubesRLse58IapNabl7o4xVjFbKrT-uDLoOw;YSC=dgoCRTFCB54;SID=g.a000xwgGsbNiUCStdKDpoe_ea3fTdDxVld8vBg7r7mHTaaq0mmo5IwHuDII24X6hGy1PdmeC9QACgYKAT0SARISFQHGX2MinPbfadK2C3ypmx-Ut84l2RoVAUF8yKq1YgboRHAVnSVX5wd5QPYI0076;__Secure-1PSIDTS=sidts-CjIB5H03P0eJJJKH-SUoncLiCxtQdOdongqiYwBTHMPTLhuih5U9_-4n9uVl0I5_mDSfExAA;CONSISTENCY=AKreu9vCBR-YqkO81vSGd4oJf8FrBGWhxLDE4ZYSp0Ik4z4sFjBcgVp_0H0UYHpL99oqpXhkKSfGUapPVo19FGQCyL91RnOvWCLXo5W5bZSSCdlt-YjwPCD8Ar1jGf7lz1BKQFpQ-wQwPXpsdIW01C50;SAPISID=EjutoXR4FsxiIDop/Ave-6bzsgN-FCN60_;__Secure-1PSIDCC=AKEyXzXD-k2APvVLn4d5RuF7AgR1yYMaZ67d6wiL_KJxRKnPfI46J-eGu5dkXTgB-J3yh4lgq4o;SSID=ArNNR4oEkwx_U1NZJ;__Secure-1PAPISID=EjutoXR4FsxiIDop/Ave-6bzsgN-FCN60_;__Secure-1PSID=g.a000xwgGsbNiUCStdKDpoe_ea3fTdDxVld8vBg7r7mHTaaq0mmo5c9sAdLBpdUkaLm-7Lpc3DwACgYKAaUSARISFQHGX2MirJXzA7CTlC044C3nXufMORoVAUF8yKqy1OnjFCgPrEdmQtpuOCzj0076;__Secure-3PAPISID=EjutoXR4FsxiIDop/Ave-6bzsgN-FCN60_;__Secure-3PSIDCC=AKEyXzXccFduO_uaWL8EryVkQ--8a7nGDXfWyiYkKiz4ZpC0hsJGQ_HFw7ATKq-qvQ0D2NPlpQ;__Secure-3PSIDTS=sidts-CjIB5H03P0eJJJKH-SUoncLiCxtQdOdongqiYwBTHMPTLhuih5U9_-4n9uVl0I5_mDSfExAA;APISID=ipl4m8Xx09e8a-72/A8DzjniN4QB6GeP0g;HSID=AL11CQac4AvYdV8qb;LOGIN_INFO=AFmmF2swRQIgWksYREhciFxDcVxQuq5gjotEMFxvtEb3f8mAAW4WUTUCIQD5JQNkXKs1YpzNW3uAQrD73rLs0xRmUtvA7kFgF-eapw:QUQ3MjNmeVVoUUF4T285OTVrTzRKTjB3QXhFTmVibi11T2FPNUFXSzBkNkFKM1c0a0JYRVdoNHg0LTRMV3FsLUNkQUpkcEk3ZTR1LTdYX3l6R1BLODZwR29sRnhOR2pReGhpeWdOcDh5dWR0cU1lRWtva0FBelM3V2dVd0k0Uy1sZzIzRUhWVVBTLVlqMmcxTG51Q21YZzA1SEU2LVcxdDlR;PREF=f6=40000000&tz=Europe.Paris&f5=20000&f7=100;SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjUwNjAzLjAzX3AwGgJmciACGgYIgJn-wQY;ST-6m7wh8=session_logininfo=AFmmF2swRQIgF69zvyZH6k_sOM5-x4UbHkQJeBr0CIgfFIFPnIAjZJICIQDSyYBi0df-z_zOprpIGnMmRSOqOIge_U5FkRQoMToZDw%3AQUQ3MjNmd0ROR2xkNU5YTXFkMWtrWU5Wd016SmZsTDNUamVUeUJHWnNTRTA0ZHcxV2IyQ0RZNEp6U0tIbFljdVVVVkNwQy1ORVRDdzNETlQ1QjJPQWgzWXcxR1VCWnlXbFI2MHJUclluTXJmWUQ3YmlwR3BISUp0SURKcElHQ3dtazFtQUFFYzlTb3U4d0U2d1VTbzVkdVhValFWeFBwT2RB;VISITOR_INFO1_LIVE=QEOzas8aboQ;ST-sbra4i=session_logininfo=AFmmF2swRQIgF69zvyZH6k_sOM5-x4UbHkQJeBr0CIgfFIFPnIAjZJICIQDSyYBi0df-z_zOprpIGnMmRSOqOIge_U5FkRQoMToZDw%3AQUQ3MjNmd0ROR2xkNU5YTXFkMWtrWU5Wd016SmZsTDNUamVUeUJHWnNTRTA0ZHcxV2IyQ0RZNEp6U0tIbFljdVVVVkNwQy1ORVRDdzNETlQ1QjJPQWgzWXcxR1VCWnlXbFI2MHJUclluTXJmWUQ3YmlwR3BISUp0SURKcElHQ3dtazFtQUFFYzlTb3U4d0U2d1VTbzVkdVhValFWeFBwT2RB;ST-183jmdn=session_logininfo=AFmmF2swRQIgWksYREhciFxDcVxQuq5gjotEMFxvtEb3f8mAAW4WUTUCIQD5JQNkXKs1YpzNW3uAQrD73rLs0xRmUtvA7kFgF-eapw%3AQUQ3MjNmeVVoUUF4T285OTVrTzRKTjB3QXhFTmVibi11T2FPNUFXSzBkNkFKM1c0a0JYRVdoNHg0LTRMV3FsLUNkQUpkcEk3ZTR1LTdYX3l6R1BLODZwR29sRnhOR2pReGhpeWdOcDh5dWR0cU1lRWtva0FBelM3V2dVd0k0Uy1sZzIzRUhWVVBTLVlqMmcxTG51Q21YZzA1SEU2LVcxdDlR"
         }
         response = session.get(url, headers=headers, timeout=15)
         response.raise_for_status()
@@ -107,10 +100,6 @@ def process_url(channel_data, session, access_token):
 
         if "Avant d'accéder à YouTube" in html_content or "Bevor Sie zu YouTube weitergehen" in html_content:
             log_message(f"Page de consentement détectée pour {url}")
-            html_filepath = os.path.join(error_html_dir, f"{channel_id}_cookie.html")
-            with open(html_filepath, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            log_message(f"HTML de la page de consentement enregistré dans {html_filepath}")
             return results
 
         time.sleep(0.5)
@@ -145,13 +134,6 @@ def process_url(channel_data, session, access_token):
             else:
                 log_message(f"Titre non trouvé à la position {upcoming_pos} pour {url}")
                 html_filename = f"{channel_handle}_{upcoming_pos}.html"
-                html_filepath = os.path.join(error_html_dir, html_filename)
-                try:
-                    with open(html_filepath, 'w', encoding='utf-8') as html_file:
-                        html_file.write(html_content)
-                    log_message(f"HTML enregistré dans {html_filepath}")
-                except Exception as e:
-                    log_message(f"Erreur lors de l'enregistrement du HTML dans {html_filepath} : {str(e)}")
 
             thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', segment_before, re.DOTALL)
             if thumbnail_search:
@@ -195,47 +177,39 @@ def process_url(channel_data, session, access_token):
             else:
                 log_message(f"Titre live non trouvé à la position {live_pos} pour {url}")
                 html_filename = f"{channel_handle}_live_{live_pos}.html"
-                html_filepath = os.path.join(error_html_dir, html_filename)
-                try:
-                    with open(html_filepath, 'w', encoding='utf-8') as html_file:
-                        html_file.write(html_content)
-                    log_message(f"HTML enregistré dans {html_filepath}")
-                except Exception as e:
-                    log_message(f"Erreur lors de l'enregistrement du HTML dans {html_filepath} : {str(e)}")
 
             thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', search_range, re.DOTALL)
             if thumbnail_search:
                 video_thumbnail = thumbnail_search.group(1)
                 video_thumbnail = video_thumbnail.encode().decode('utf-8', errors='replace')
 
+             # Recherche du dernier videoId avant "style":"LIVE"
             video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]+)"', search_range)
             if video_ids:
-                video_id = video_ids[-1]
+                video_id = video_ids[-1]  # Prendre le dernier videoId
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
+                # Vérification contextuelle : confirmer que c'est une vidéo live
+                if re.search(r'"viewCountText":\s*{"runs":\[{"text":"[^"]+"},{"text":"watching"}]', search_range):
+                    pass  # Le videoId est valide pour une vidéo live
+                else:
+                    log_message(f"Attention : Le videoId {video_id} peut ne pas correspondre à une vidéo live à la position {live_pos}")
             else:
-                log_message(f"videoId live non trouvé à la position {live_pos} pour {url}")
-                continue
+                log_message(f"videoId non trouvé (live) avant la position {live_pos} dans {search_start}-{live_pos} pour {url}")
+                continue  # Ignorer cette vidéo si aucun videoId n'est trouvé
 
-            if title and video_url and video_thumbnail:
-                results.append({
-                    "vidUrl": video_url,
-                    "vidTitle": title,
-                    "vidThumbnail": video_thumbnail,
-                    "startTime": str(int(time.time())),
-                    "chUrl": url,
-                    "chTitle": channel_name,
-                    "chThumbnail": ch_thumbnail,
-                    "status": "live",
-                    "timestamp": datetime.now().isoformat()
-                })
+            results.append({
+                "vidUrl": video_url,
+                "vidTitle": title,
+                "vidThumbnail": video_thumbnail,
+                "startTime": str(int(time.time())),  # Timestamp actuel pour les vidéos live
+                "chUrl": url,
+                "chTitle": channel_name,
+                "chThumbnail": ch_thumbnail,
+                "status": "live"
+            })
 
         upcoming_count = sum(1 for r in results if r["status"] == "upcoming")
-        live_count = sum(1 for r in results if r["status"] == "live")
-        if results:
-            log_message(f"Résultat pour {channel_name} : {upcoming_count} upcoming, {live_count} live")
-        else:
-            log_message(f"Aucune vidéo trouvée pour {channel_name}")
-
+        live_count = sum(1 for r in results if r["status"] == "live")        
         return results
 
     except requests.exceptions.RequestException as e:

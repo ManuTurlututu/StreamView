@@ -9,8 +9,8 @@ let currentFollowedChannels = [];
 let currentYoutubeChannels = [];
 let notificationLog = [];
 let sortMode = "viewers";
-let sortFollowMode = "name";
-let sortYoutubeMode = "name";
+let sortFollowMode = "date";
+let sortYoutubeMode = "date";
 let durationAnimationFrame = null;
 let lastDurationUpdate = 0;
 let searchLiveQuery = "";
@@ -19,7 +19,7 @@ let searchYoutubeQuery = "";
 let searchNotificationsQuery = "";
 let notificationSettings = new Map();
 let currentUpcomingStreams = [];
-let sortUpcomingMode = "name";
+let sortUpcomingMode = "date";
 let searchUpcomingQuery = "";
 
 function truncateTitle(title) {
@@ -188,7 +188,7 @@ async function getUserId(token) {
 }
 
 async function getFollowedStreams() {
-  console.log("Début de getFollowedStreams");
+  console.log(`[${new Date().toISOString()}] Début de getFollowedStreams`);
   const token = await getTwitchAccessToken();
   const loginButton = document.getElementById("login-button");
   if (!token) {
@@ -200,58 +200,28 @@ async function getFollowedStreams() {
   }
 
   loginButton.style.display = "none";
-  const userId = await getUserId(token);
-  if (!userId) return;
-
-  let allStreams = [];
-  let cursor = null;
-
   try {
-    do {
-      const url = `https://api.twitch.tv/helix/streams/followed?user_id=${userId}&first=100${cursor ? `&after=${cursor}` : ""}`;
-      const response = await fetch(url, {
-        headers: {
-          "Client-Id": clientId,
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (response.status === 401) {
-        const newToken = await refreshTwitchToken();
-        if (!newToken) {
-          throw new Error("Impossible de rafraîchir le jeton");
-        }
-        return await getFollowedStreams();
-      }
-      if (response.status === 429) {
-        const retryAfter = parseInt(response.headers.get("Ratelimit-Reset") || "1", 10);
-        await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
-        continue;
-      }
-      const data = await response.json();
+    const response = await fetch("/get-live-streams");
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Échec de la récupération des streams en direct");
+    }
+    const streams = await response.json();
+    console.log(`[${new Date().toISOString()}] Streams récupérés via /get-live-streams:`, streams.length);
 
-      if (data.data) {
-        allStreams = allStreams.concat(data.data);
-      }
-
-      cursor = data.pagination?.cursor || null;
-    } while (cursor);
-
-    console.log("Streams Twitch récupérés:", allStreams.length);
-    if (allStreams.length > 0) {
-      await updateChannels(allStreams, token);
+    if (streams.length > 0) {
+      await updateChannels(streams, token);
     } else {
-      console.log("Aucun stream Twitch en direct");
+      console.log("Aucun stream en direct");
       displayError("Aucun stream suivi n'est actuellement en direct.", "channels-list");
       currentStreams = [];
       document.getElementById("channels-list").innerHTML = "";
       stopDurationUpdates();
     }
   } catch (error) {
-    console.error("Erreur lors de la récupération des streams suivis :", error);
-    displayError("Erreur lors du chargement des streams suivis. Veuillez vous reconnecter.", "channels-list");
+    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des streams:`, error);
+    displayError("Erreur lors du chargement des streams. Veuillez réessayer.", "channels-list");
     loginButton.style.display = "block";
-    currentTwitchToken = null;
-    updateLogoutButtonVisibility();
     stopDurationUpdates();
   }
 }
@@ -511,7 +481,7 @@ async function updateUpcomingStreams() {
 
   loginButton.style.display = "none";
   try {
-    const response = await fetch("/get-upcoming-videos");
+    const response = await fetch("/get-youtube-videos");
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(errorData.error || "Échec de la récupération des vidéos à venir");
@@ -546,11 +516,11 @@ async function getUpcomingVideos() {
 
   loginButton.style.display = "none";
   try {
-    console.log("Récupération des vidéos YouTube via /get-upcoming-videos");
-    const response = await fetch("/get-upcoming-videos");
+    console.log("Récupération des vidéos YouTube via /get-youtube-videos");
+    const response = await fetch("/get-youtube-videos");
     if (!response.ok) {
       const errorData = await response.json();
-      console.error("Échec de /get-upcoming-videos:", errorData);
+      console.error("Échec de /get-youtube-videos:", errorData);
       throw new Error(errorData.error || "Échec de la récupération des vidéos à venir");
     }
     const videos = await response.json();
@@ -599,7 +569,7 @@ function createUpcomingCard(stream) {
       </a>
       <div class="schedule-info">
         <p class="text-gray-300 font-bold">${formatDate(stream.startTime)}</p>
-        <p id="${countdownId}" class="text-blue-400 font-bold">${isLive ? 'Live' : ''}</p>
+        <p id="${countdownId}" class="text-blue-400 font-bold">${isLive ? 'Pending...' : ''}</p>
         <div id="${bellId}" class="${bellClass}" onclick="toggleBellColor('${bellId}', '${stream.chTitle}', '${stream.startTime}')">
           <svg viewBox="0 0 24 24">
             <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"/>
@@ -785,7 +755,7 @@ function createNotificationCard(notification) {
 }
 
 function sortStreams(streams, mode) {
-  console.log("Tri des streams avec mode:", mode, "Données :", streams);
+  console.log(`[${new Date().toISOString()}] Tri des streams avec mode:`, mode, "Données:", streams);
   return streams.sort((a, b) => {
     if (!a || !b) {
       console.error("Stream invalide détecté:", a, b);
@@ -796,12 +766,12 @@ function sortStreams(streams, mode) {
       const bViewers = b.platform === "twitch" ? (b.viewer_count || 0) : 0;
       return bViewers - aViewers;
     } else if (mode === "name") {
-      const aName = a.platform === "twitch" ? (a.user_name || "") : (a.chTitle || "");
-      const bName = b.platform === "twitch" ? (b.user_name || "") : (b.chTitle || "");
+      const aName = a.user_name || "";
+      const bName = b.user_name || "";
       return aName.localeCompare(bName, "fr", { sensitivity: "base" });
     } else if (mode === "duration") {
-      const aStart = a.platform === "twitch" ? new Date(a.started_at || 0).getTime() : (a.startTime * 1000 || 0);
-      const bStart = b.platform === "twitch" ? new Date(b.started_at || 0).getTime() : (b.startTime * 1000 || 0);
+      const aStart = a.started_at || 0;
+      const bStart = b.started_at || 0;
       return bStart - aStart;
     }
     return 0;
@@ -1078,12 +1048,10 @@ function updateDurationCounters(timestamp) {
   lastDurationUpdate = timestamp;
   const channelsList = document.getElementById("channels-list");
   currentStreams.forEach((stream) => {
-    const id = stream.platform === "twitch" ? stream.user_id : stream._id;
-    const card = channelsList.querySelector(`[data-user-id="${id}"]`);
+    const card = channelsList.querySelector(`[data-user-id="${stream.user_id}"]`);
     if (card) {
       const streamDuration = card.querySelector(".stream-duration");
-      const startTime = stream.platform === "twitch" ? stream.started_at : stream.startTime * 1000;
-      streamDuration.textContent = formatStreamDuration(startTime);
+      streamDuration.textContent = formatStreamDuration(stream.started_at);
     }
   });
 
@@ -1105,68 +1073,45 @@ function stopDurationUpdates() {
   }
 }
 
-async function updateChannels(newStreams, token) {
-  console.log("Début de updateChannels avec", newStreams.length, "streams Twitch");
+async function updateChannels(streams, token) {
+  console.log(`[${new Date().toISOString()}] Début de updateChannels avec`, streams.length, "streams");
   const channelsList = document.getElementById("channels-list");
   channelsList.innerHTML = '<div class="loader"></div>';
 
-  let youtubeLiveStreams = [];
-  try {
-    console.log("Récupération des vidéos YouTube via /get-upcoming-videos");
-    const response = await fetch("/get-upcoming-videos");
-    if (response.ok) {
-      const videos = await response.json();
-      console.log("Vidéos récupérées:", videos.length, "vidéos");
-      console.log("Statuts uniques:", [...new Set(videos.map(stream => stream.status || "undefined"))]);
-      youtubeLiveStreams = videos.filter(stream => 
-        stream.status && stream.status.toLowerCase() === "live"
-      );
-      console.log("YouTube Live Streams après filtrage:", youtubeLiveStreams.length, "streams");
-      console.log("Exemple de stream live:", youtubeLiveStreams[0] || "Aucun stream live");
-    } else {
-      console.error("Échec de /get-upcoming-videos:", response.statusText);
-    }
-  } catch (error) {
-    console.error("Erreur lors de la récupération des vidéos:", error);
-  }
+  // Récupérer les avatars pour Twitch
+  const twitchStreamIds = streams
+    .filter(stream => stream.platform === "twitch")
+    .map(stream => stream.user_id);
+  const twitchProfiles = twitchStreamIds.length > 0 ? await getUserProfiles(twitchStreamIds, token) : {};
 
-  const twitchStreamIds = newStreams.map(stream => stream.user_id);
-  const twitchProfiles = await getUserProfiles(twitchStreamIds, token);
+  // Créer un cache d'avatars pour YouTube (utiliser avatar_url directement)
+  const youtubeProfiles = streams
+    .filter(stream => stream.platform === "youtube")
+    .reduce((acc, stream) => {
+      acc[stream.user_id] = stream.avatar_url || "https://yt3.ggpht.com/ytc/default-channel-img.jpg";
+      return acc;
+    }, {});
 
-  const youtubeProfiles = youtubeLiveStreams.reduce((acc, stream) => {
-    acc[stream._id] = stream.chThumbnail || "https://yt3.ggpht.com/ytc/default-channel-img.jpg";
-    return acc;
-  }, {});
-
-  const allStreams = [
-    ...newStreams.map(stream => ({ ...stream, platform: "twitch" })),
-    ...youtubeLiveStreams.map(stream => ({ ...stream, platform: "youtube" }))
-  ];
-  console.log("allStreams fusionnés:", allStreams.length, "streams");
-
-  const sortedStreams = sortStreams(allStreams, sortMode);
+  const sortedStreams = sortStreams(streams, sortMode);
 
   reorderChannels(channelsList, sortedStreams, null, (stream) => {
+    const avatarUrl = stream.platform === "twitch"
+      ? twitchProfiles[stream.user_id] || "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png"
+      : youtubeProfiles[stream.user_id] || "https://yt3.ggpht.com/ytc/default-channel-img.jpg";
+
     if (stream.platform === "twitch") {
-      const card = createTwitchLiveCard(
-        stream,
-        twitchProfiles[stream.user_id] ||
-          "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png"
-      );
+      const card = createTwitchLiveCard(stream, avatarUrl);
       card.setAttribute("data-user-id", stream.user_id);
       return card;
     } else {
-      console.log("Création de carte YouTube pour:", stream._id);
-      const card = createYoutubeLiveCard(
-        stream,
-        youtubeProfiles[stream._id]
-      );
-      card.setAttribute("data-user-id", stream._id);
+      console.log("Création de carte YouTube pour:", stream.user_id);
+      const card = createYoutubeLiveCard(stream, avatarUrl);
+      card.setAttribute("data-user-id", stream.user_id);
       return card;
     }
   });
 
-  console.log("Cartes réorganisées, currentStreams:", sortedStreams.length);
+  console.log(`[${new Date().toISOString()}] Cartes réorganisées, currentStreams:`, sortedStreams.length);
   currentStreams = sortedStreams;
 
   filterStreams();
@@ -1355,31 +1300,31 @@ function createTwitchLiveCard(stream, avatarUrl) {
 }
 
 function createYoutubeLiveCard(stream, avatarUrl) {
-  const truncatedTitle = truncateTitle(stream.vidTitle);
-  const truncatedChannelName = truncateChannelName(stream.chTitle);
-  const truncatedGameName = truncateGameName(null); // Pas de game_name, utiliser "Inconnu"
-  const thumbnailUrl = stream.vidThumbnail || 'https://i.ytimg.com/vi/default.jpg'; // Fallback si vidThumbnail est vide
+  const truncatedTitle = truncateTitle(stream.title);
+  const truncatedChannelName = truncateChannelName(stream.user_name);
+  const truncatedGameName = truncateGameName(stream.game_name);
+  const thumbnailUrl = stream.thumbnail_url || 'https://i.ytimg.com/vi/default.jpg';
 
   const card = document.createElement('div');
   card.className = `item-container red-border`;
-  card.setAttribute('data-user-id', stream._id); // Utiliser _id comme identifiant unique
+  card.setAttribute('data-user-id', stream.user_id);
   card.innerHTML = `
     <div class="header-row">
-      <a href="${stream.chUrl}" target="_blank">
-        <img src="${avatarUrl}" alt="${stream.chTitle}" class="channel-img">
+      <a href="${stream.stream_url}" target="_blank">
+        <img src="${avatarUrl}" alt="${stream.user_name}" class="channel-img">
       </a>
       <div class="channel-info">
-        <p class="channel-title" title="${stream.chTitle}">${truncatedChannelName}</p>
-        <p class="viewer-count">N/A</p> <!-- Pas de viewer_count disponible -->
-        <p class="stream-duration">${formatStreamDuration(stream.startTime * 1000)}</p>
-        <p class="game-title" title="Inconnu">${truncatedGameName}</p>
+        <p class="channel-title" title="${stream.user_name}">${truncatedChannelName}</p>
+        <p class="viewer-count">N/A</p>
+        <p class="stream-duration">${formatStreamDuration(stream.started_at)}</p>
+        <p class="game-title" title="${stream.game_name || 'Inconnu'}">${truncatedGameName}</p>
       </div>
     </div>
-    <a href="${stream.vidUrl}" target="_blank">
-      <img src="${thumbnailUrl}" alt="${stream.vidTitle} thumbnail" class="thumbnail">
+    <a href="${stream.stream_url}" target="_blank">
+      <img src="${thumbnailUrl}" alt="${stream.title} thumbnail" class="thumbnail">
     </a>
     <div class="card-content">
-      <p class="stream-title" title="${stream.vidTitle || 'Aucun titre'}">${truncatedTitle}</p>
+      <p class="stream-title" title="${stream.title || 'Aucun titre'}">${truncatedTitle}</p>
     </div>
   `;
   return card;
