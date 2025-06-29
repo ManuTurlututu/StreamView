@@ -864,12 +864,14 @@ app.use((err, req, res, next) => {
 app.get("/get-upcoming-videos", async (req, res) => {
   console.log(`[${new Date().toISOString()}] Requête /get-upcoming-videos`);
   try {
-    const upcomingVideos = await YoutubeVideo.find({ status: "upcoming" }).sort({ startTime: 1 });
-    console.log(`[${new Date().toISOString()}] Vidéos à venir récupérées: ${upcomingVideos.length}`);
-    res.json(upcomingVideos);
+    const videos = await YoutubeVideo.find({
+      status: { $in: ["upcoming", "live"] }
+    }).sort({ startTime: 1 });
+    console.log(`[${new Date().toISOString()}] Vidéos récupérées: ${videos.length} (upcoming + live)`);
+    res.json(videos);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des vidéos à venir:`, error.message);
-    res.status(500).json({ error: "Erreur serveur lors de la récupération des vidéos à venir" });
+    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des vidéos:`, error.message);
+    res.status(500).json({ error: "Erreur serveur lors de la récupération des vidéos" });
   }
 });
 
