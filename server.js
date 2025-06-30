@@ -48,6 +48,10 @@ mongoose.connect(process.env.MONGODB_URI)
 .then(() => console.log(`[${new Date().toISOString()}] Connecté à MongoDB`))
 .catch(error => console.error(`[${new Date().toISOString()}] Erreur de connexion à MongoDB:`, error.message));
 
+
+
+
+
 // Schéma pour les notifications
 const notificationSchema = new mongoose.Schema({
   id: { type: String, required: true },
@@ -189,58 +193,77 @@ async function saveYoutubeChannels(channels) {
 }
 
 // Fonction pour synchroniser les vidéos live YouTube avec liveStreams
+// Synchroniser les vidéos live YouTube
 async function syncYoutubeLiveVideos() {
   try {
-    // Récupérer les vidéos live de youtubeVideos
-    const liveVideos = await YoutubeVideo.find({ status: "live" });
-    console.log(`[${new Date().toISOString()}] Récupéré ${liveVideos.length} vidéos live YouTube`);
+    const liveVideos = await YoutubeVideo.find({ status: 'live' });
+    console.log(`[${new Date().toISOString()}] ${liveVideos.length} vidéos live YouTube`);
 
-    // Formatter les vidéos pour correspondre au schéma de liveStreams
-    const formattedVideos = liveVideos.map(video => ({
-      platform: 'youtube',
-      user_id: video.chUrl.split('/channel/')[1] || 'unknown', // Extraire l'ID du channel
-      user_name: video.chTitle || 'Inconnu',
-      title: video.vidTitle || 'Aucun titre',
-      thumbnail_url: video.vidThumbnail || 'https://i.ytimg.com/img/no_thumbnail.jpg',
-      avatar_url: video.chThumbnail || 'https://yt3.ggpht.com/ytc/default-channel-img.jpg',
-      viewer_count: 0, // Placeholder pour le nombre de viewers
-      started_at: parseInt(video.startTime) || Date.now(), // Timestamp de début
-      game_name: 'Inconnu', // Placeholder
-      stream_url: video.vidUrl,
-      timestamp: Date.now()
-    }));
+    const existingStreams = await Live.find({ platform: 'youtube' });
+    const existingStreamIds = new Set(existingStreams.map(stream => stream.user_id));
 
-    // Sauvegarder les vidéos live dans liveStreams
+    const formattedVideos = liveVideos.map(video => {
+      let startTime;
+      try {
+        startTime = video.startTime ? new Date(video.startTime).getTime() : Date.now();
+        if (isNaN(startTime)) throw new Error('Invalid startTime');
+      } catch (e) {
+        console.warn(`[${new Date().toISOString()}] startTime invalide pour ${video.chTitle}: ${video.startTime}, utilisation de Date.now()`);
+        startTime = Date.now();
+      }
+      return {
+        platform: 'youtube',
+        user_id: video.chUrl.split('/channel/')[1] || 'unknown',
+        user_name: video.chTitle || 'Inconnu',
+        title: video.vidTitle || 'Aucun titre',
+        thumbnail_url: video.vidThumbnail || 'https://i.ytimg.com/img/no_thumbnail.jpg',
+        avatar_url: video.chThumbnail || 'https://yt3.ggpht.com/ytc/default-channel-img.jpg',
+        viewer_count: 0,
+        started_at: startTime, // Conversion explicite en timestamp
+        game_name: 'Inconnu',
+        stream_url: video.vidUrl,
+        timestamp: Date.now()
+      };
+    });
+
+    const newStreams = formattedVideos.filter(video => !existingStreamIds.has(video.user_id));
+    console.log(`[${new Date().toISOString()}] Nouveaux streams YouTube:`, newStreams.map(s => s.user_name));
+
+    for (const video of newStreams) {
+      const notification = {
+        id: `youtube-${video.user_id}-${Date.now()}`,
+        user_id: video.user_id,
+        user_name: video.user_name,
+        title: video.title,
+        avatar_url: video.avatar_url,
+        platform: 'youtube',
+        vidUrl: video.stream_url,
+        timestamp: Date.now()
+      };
+      await saveNotificationLog(notification);
+    }
+
     if (formattedVideos.length > 0) {
       const operations = formattedVideos.map(video => ({
         updateOne: {
           filter: { platform: 'youtube', user_id: video.user_id },
           update: { $set: video },
-          upsert: true // Insère si ça n'existe pas, met à jour sinon
+          upsert: true
         }
       }));
       await Live.bulkWrite(operations);
-      console.log(`[${new Date().toISOString()}] ${formattedVideos.length} vidéos live YouTube synchronisées dans liveStreams`);
-    } else {
-      console.log(`[${new Date().toISOString()}] Aucune vidéo live YouTube à synchroniser`);
+      console.log(`[${new Date().toISOString()}] ${formattedVideos.length} vidéos YouTube synchronisées`);
     }
 
-    // Supprimer les vidéos YouTube non live de liveStreams
-    const liveUserIds = formattedVideos.map(video => video.user_id);
-    await Live.deleteMany({
-      platform: 'youtube',
-      user_id: { $nin: liveUserIds }
-    });
-    console.log(`[${new Date().toISOString()}] Vidéos YouTube non live supprimées de liveStreams (user_ids non présents: ${liveUserIds.length ? liveUserIds.join(', ') : 'tous'})`);
-
+    await Live.deleteMany({ platform: 'youtube', user_id: { $nin: formattedVideos.map(video => video.user_id) } });
+    console.log(`[${new Date().toISOString()}] Vidéos YouTube non live supprimées`);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la synchronisation des vidéos live YouTube:`, error.message);
+    console.error(`[${new Date().toISOString()}] Erreur YouTube:`, error.message);
   }
 }
 
 async function syncTwitchLiveStreams() {
   try {
-    // Vérifier si les jetons et l'ID utilisateur sont disponibles
     if (!twitchAccessToken || !twitchUserId) {
       console.log(`[${new Date().toISOString()}] Jeton d'accès ou userId Twitch manquant, tentative de rafraîchissement...`);
       if (!twitchRefreshToken) {
@@ -251,42 +274,74 @@ async function syncTwitchLiveStreams() {
       await saveTwitchTokens();
     }
 
-    // Récupérer les streams Twitch en direct
     const followedStreams = await getFollowedStreams(twitchAccessToken);
     console.log(`[${new Date().toISOString()}] Récupéré ${followedStreams.data?.length || 0} streams Twitch en direct`);
 
-    // Formatter les streams pour correspondre au schéma Live
+    // Récupérer les profils des utilisateurs pour obtenir profile_image_url
+    const userIds = followedStreams.data?.map(stream => stream.user_id) || [];
+    let profiles = {};
+    if (userIds.length > 0) {
+      const userResponse = await axios.get(`https://api.twitch.tv/helix/users?${userIds.map(id => `id=${id}`).join('&')}`, {
+        headers: {
+          "Client-ID": process.env.TWITCH_CLIENT_ID,
+          Authorization: `Bearer ${twitchAccessToken}`,
+        },
+      });
+      profiles = userResponse.data.data.reduce((acc, user) => {
+        acc[user.id] = user.profile_image_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png';
+        return acc;
+      }, {});
+    }
+
+    // Récupérer l'état actuel de liveStreams pour Twitch
+    const existingStreams = await Live.find({ platform: 'twitch' });
+    const existingStreamIds = new Set(existingStreams.map(stream => stream.user_id));
+
     const formattedStreams = followedStreams.data?.map(stream => ({
       platform: 'twitch',
       user_id: stream.user_id,
       user_name: stream.user_name || 'Inconnu',
       title: stream.title || 'Aucun titre',
       thumbnail_url: stream.thumbnail_url || 'https://static-cdn.jtvnw.net/ttv-static/404_preview.jpg',
-      avatar_url: stream.profile_image_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/default_profile_image.png',
+      avatar_url: profiles[stream.user_id] || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png',
       viewer_count: stream.viewer_count || 0,
       started_at: new Date(stream.started_at).getTime(),
       game_name: stream.game_name || 'Inconnu',
-      stream_url: `https://www.twitch.tv/${stream.user_name}`,
+      stream_url: `https://www.twitch.tv/${stream.user_name.toLowerCase()}`,
       timestamp: Date.now()
     })) || [];
 
-    // Sauvegarder les streams en direct
+    // Détecter les nouveaux streams
+    const newStreams = formattedStreams.filter(stream => !existingStreamIds.has(stream.user_id));
+    console.log(`[${new Date().toISOString()}] Nouveaux streams Twitch détectés:`, newStreams.map(s => s.user_name));
+
+    // Enregistrer une notification pour chaque nouveau stream
+    for (const stream of newStreams) {
+      const notification = {
+        id: `twitch-${stream.user_id}-${Date.now()}`,
+        user_id: stream.user_id,
+        user_name: stream.user_name,
+        title: stream.title,
+        avatar_url: stream.avatar_url,
+        platform: 'twitch',
+        timestamp: Date.now()
+      };
+      await saveNotificationLog(notification);
+    }
+
     if (formattedStreams.length > 0) {
       await saveLiveStreams(formattedStreams);
     } else {
       console.log(`[${new Date().toISOString()}] Aucun stream Twitch en direct à sauvegarder`);
     }
 
-    // Supprimer les streams Twitch non live
-    const liveUserIds = formattedStreams.map(stream => stream.user_id);
     await Live.deleteMany({
       platform: 'twitch',
-      user_id: { $nin: liveUserIds }
+      user_id: { $nin: formattedStreams.map(stream => stream.user_id) }
     });
-    console.log(`[${new Date().toISOString()}] Streams Twitch non live supprimés (user_ids non présents: ${liveUserIds.length ? liveUserIds.join(', ') : 'tous'})`);
-
+    console.log(`[${new Date().toISOString()}] Streams Twitch non live supprimés`);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la synchronisation des streams Twitch:`, error.message);
+    console.error(`[${new Date().toISOString()}] Erreur lors de la synchronisation:`, error.message);
     if (error.response) {
       console.error(`[${new Date().toISOString()}] Détails de l’erreur API:`, error.response.status, error.response.data);
     }
@@ -758,21 +813,28 @@ async function runPythonScript(accessToken) {
 
 // Endpoint pour déclencher manuellement le script Python
 app.post("/run-python", async (req, res) => {
-  if (!youtubeAccessToken && youtubeRefreshToken) {
-    try {
-      const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(youtubeRefreshToken);
-      youtubeAccessToken = newAccessToken;
-    } catch (error) {
-      console.error(`[${new Date().toISOString()}] Erreur lors du rafraîchissement du jeton dans /run-python:`, error.message);
-      return res.status(401).json({ error: "Jeton YouTube invalide, veuillez vous reconnecter via /auth/youtube" });
-    }
-  }
-
-  if (!youtubeAccessToken) {
-    return res.status(401).json({ error: "Aucun jeton d’accès YouTube disponible, veuillez vous connecter via /auth/youtube" });
-  }
-
+  console.log(`[${new Date().toISOString()}] Requête /run-python reçue`);
   try {
+    const tokenDoc = await TokenApi.findOne({ platform: 'youtube' });
+    if (!tokenDoc || !tokenDoc.refreshToken) {
+      console.error(`[${new Date().toISOString()}] Aucun jeton ou refresh_token YouTube disponible dans TokenApi`);
+      return res.status(401).json({ error: "Aucun jeton YouTube disponible, veuillez vous connecter via /auth/youtube" });
+    }
+
+    // Vérifier si le jeton est expiré (lastUpdated + expiresIn < maintenant)
+    const now = Date.now();
+    const isTokenExpired = !tokenDoc.accessToken || !tokenDoc.lastUpdated || !tokenDoc.expiresIn || 
+                           (new Date(tokenDoc.lastUpdated).getTime() + tokenDoc.expiresIn * 1000 < now - 60 * 1000); // Marge de 60s
+
+    if (isTokenExpired) {
+      console.log(`[${new Date().toISOString()}] Jeton YouTube expiré ou absent, tentative de rafraîchissement`);
+      const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(tokenDoc.refreshToken);
+      youtubeAccessToken = newAccessToken;
+    } else {
+      youtubeAccessToken = tokenDoc.accessToken;
+      console.log(`[${new Date().toISOString()}] Jeton YouTube encore valide`);
+    }
+
     await runPythonScript(youtubeAccessToken);
     res.json({ success: true });
   } catch (error) {
@@ -780,6 +842,7 @@ app.post("/run-python", async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
 // Endpoint pour récupérer le jeton Twitch
 app.get("/get-token", async (req, res) => {
   if (!twitchAccessToken && twitchRefreshToken) {
@@ -834,6 +897,23 @@ app.get("/refresh-token", async (req, res) => {
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Erreur lors du rafraîchissement du jeton dans /refresh-token, IP: ${clientIp}:`, error.message);
     res.status(401).json({ error: "Jeton Twitch invalide, veuillez vous reconnecter via /auth/twitch" });
+  }
+});
+
+//endpoint
+app.get('/get-recent-notifications', async (req, res) => {
+  try {
+    // Récupérer les notifications des dernières 5 minutes pour limiter les données
+    const recentTimestamp = Date.now() - 5 * 60 * 1000;
+    const notifications = await Notification.find({
+      timestamp: { $gte: recentTimestamp }
+    }).sort({ timestamp: -1 }).limit(50);
+    
+    console.log(`[${new Date().toISOString()}] Récupéré ${notifications.length} notifications récentes`);
+    res.json(notifications);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des notifications:`, error.message);
+    res.status(500).json({ error: 'Erreur serveur lors de la récupération des notifications' });
   }
 });
 

@@ -100,6 +100,9 @@ body {
 .item-container.red-border {
   border: 2px solid red;
 }
+.twitch-purple-border {
+  border: 2px solid #612fac;
+}
 .header-row {
   display: flex;
   justify-content: space-between;

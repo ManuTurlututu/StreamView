@@ -21,6 +21,8 @@ let notificationSettings = new Map();
 let currentUpcomingStreams = [];
 let sortUpcomingMode = "date";
 let searchUpcomingQuery = "";
+let lastNotificationIds = new Set();
+let lastCheckTimestamp = Date.now();
 
 function truncateTitle(title) {
   if (!title) return "Aucun titre";
@@ -898,120 +900,101 @@ async function getNotificationLogFromServer() {
   }
 }
 
-function listenToNotifications() {
-  let retryDelay = 1000; // Délai initial de 1 seconde
-  const maxDelay = 30000; // Délai maximum de 30 secondes
+// Vérifie les nouvelles notifications
+async function listenToNotifications() {
+  try {
+    console.log(`[${new Date().toISOString()}] Vérification notifications via /get-recent-notifications`);
+    const response = await fetch('/get-recent-notifications', {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-  function connect() {
-    console.log(`[${new Date().toISOString()}] Tentative de connexion SSE à /notifications-stream`);
-    const eventSource = new EventSource('/notifications-stream');
+    if (!response.ok) {
+      throw new Error(`Erreur HTTP: ${response.status}`);
+    }
 
-    eventSource.onopen = function() {
-      console.log(`[${new Date().toISOString()}] Connexion SSE établie`);
-      retryDelay = 1000; // Réinitialiser le délai en cas de succès
-    };
+    const notifications = await response.json();
+    console.log(`[${new Date().toISOString()}] ${notifications.length} notifications reçues`);
 
-    eventSource.onmessage = function(event) {
-      try {
-        const newNotification = JSON.parse(event.data);
-        console.log(`[${new Date().toISOString()}] Nouvelle notification reçue via SSE:`, newNotification);
-        notificationLog.unshift(newNotification);
-        if (document.getElementById("notification-tab").classList.contains("active")) {
-          updateNotificationLog();
-        }
-      } catch (error) {
-        console.error(`[${new Date().toISOString()}] Erreur lors du traitement de la notification SSE:`, error);
-      }
-    };
+    // Filtrer les notifications plus récentes que la dernière vérification
+    const newNotifications = notifications.filter(n => n.timestamp > lastCheckTimestamp && !lastNotificationIds.has(n.id));
 
-    eventSource.onerror = function(error) {
-      console.error(`[${new Date().toISOString()}] Erreur SSE:`, error);
-      eventSource.close();
-      console.log(`[${new Date().toISOString()}] Reconnexion dans ${retryDelay / 1000} secondes...`);
-      setTimeout(connect, retryDelay);
-      retryDelay = Math.min(retryDelay * 2, maxDelay);
-    };
+    // Mettre à jour le timestamp de la dernière vérification
+    lastCheckTimestamp = Date.now();
+
+    // Déclencher les alertes pour les nouvelles notifications
+    for (const notif of newNotifications) {
+      console.log(`[${new Date().toISOString()}] Nouvelle notification:`, notif.user_name);
+      await showNotification({
+        user_id: notif.user_id,
+        user_name: notif.user_name,
+        title: notif.title,
+        avatar_url: notif.avatar_url,
+        game_name: "Inconnu",
+        started_at: notif.timestamp,
+        stream_url: notif.platform === 'youtube' ? notif.vidUrl : `https://www.twitch.tv/${notif.user_name.toLowerCase()}`,
+      });
+      lastNotificationIds.add(notif.id);
+    }
+
+    // Nettoyer lastNotificationIds pour éviter une croissance infinie (garder les dernières 1000)
+    if (lastNotificationIds.size > 1000) {
+      lastNotificationIds = new Set([...lastNotificationIds].slice(-1000));
+    }
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur vérification notifications:`, error.message);
   }
-
-  connect();
 }
 
+// Affiche une alerte pour un stream
 async function showNotification(stream) {
-  console.log("showNotification appelée avec:", stream);
-
-  const notificationId = Date.now().toString();
-  const notification = {
-    id: notificationId,
-    user_id: stream.user_id,
-    user_name: stream.user_name,
-    title: stream.title || "Aucun titre",
-    avatar_url:
-      avatarCache.get(stream.user_id) ||
-      "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png",
-    timestamp: Date.now(),
-  };
-
-  await saveNotificationToServer(notification);
+  console.log(`[${new Date().toISOString()}] Alerte pour:`, stream.user_name);
 
   try {
-    console.log("Tentative de lecture du son");
+    // Jouer le son
     const audio = new Audio("https://cdn.glitch.global/381e5d8d-b90c-44f3-b3a2-2b1638838939/tsar-bell.mp3?v=1747811101504");
     audio.volume = 0.2;
-    audio.play().catch((error) => console.error("Erreur lors de la lecture du son :", error));
+    audio.play().catch(e => console.error("Erreur son:", e.message));
 
-    console.log("Vérification de la permission de notification:", Notification.permission);
+    // Notification système
     if (Notification.permission !== "granted") {
       const permission = await Notification.requestPermission();
-      console.log("Résultat de la demande de permission:", permission);
       if (permission !== "granted") {
         console.warn("Permission de notification refusée");
         return;
       }
     }
 
-    const avatarUrl =
-      avatarCache.get(stream.user_id) ||
-      "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png";
-    console.log("Avatar utilisé pour la notification:", avatarUrl);
-
-    const truncatedTitle = truncateTitle(stream.title);
-    const notificationBody = `${truncatedTitle}\n${stream.game_name || "Inconnu"}`;
-    console.log("Création de la notification système avec:", notificationBody);
     const notification = new Notification(stream.user_name, {
-      body: notificationBody,
-      icon: avatarUrl,
-      requireInteraction: true,
-      tag: `twitch-stream-${stream.user_id}`,
+      body: `${truncateTitle(stream.title)}\n${stream.game_name || "Inconnu"}`,
+      icon: stream.avatar_url || "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png",
+      tag: `stream-${stream.user_id}`,
     });
 
     notification.onclick = () => {
-      console.log("Notification cliquée, ouverture du stream");
-      window.open(`https://www.twitch.tv/${stream.user_name.toLowerCase()}`, "_blank");
+      window.open(stream.stream_url || `https://www.twitch.tv/${stream.user_name.toLowerCase()}`, "_blank");
       notification.close();
     };
 
-    console.log("Création de la notification HTML");
+    // Notification HTML avec avatar
     const notificationsContainer = document.getElementById("notifications");
     const htmlNotification = document.createElement("div");
     htmlNotification.className = "notification";
     htmlNotification.innerHTML = `
-              ${stream.user_name} est en direct !<br>
-              <span class="stream-title">${truncatedTitle}</span>
-              <span class="notification-close">✕</span>
-          `;
+      <div class="avatar">
+        <img src="${stream.avatar_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png'}" alt="${stream.user_name}" class="channel-img">
+      </div>
+      <div class="notification-content">
+        ${stream.user_name} est en direct !<br>
+        <span class="stream-title">${truncateTitle(stream.title)}</span>
+        <span class="notification-close">✕</span>
+      </div>
+    `;
     notificationsContainer.appendChild(htmlNotification);
-    htmlNotification.querySelector(".notification-close").addEventListener("click", () => {
-      console.log("Notification HTML fermée");
-      htmlNotification.remove();
-    });
-    setTimeout(() => {
-      if (htmlNotification.parentNode) {
-        console.log("Notification HTML supprimée après timeout");
-        htmlNotification.remove();
-      }
-    }, 5000);
+    htmlNotification.querySelector(".notification-close").addEventListener("click", () => htmlNotification.remove());
+    setTimeout(() => htmlNotification.parentNode && htmlNotification.remove(), 5000);
   } catch (error) {
-    console.error("Erreur dans showNotification:", error);
+    console.error("Erreur alerte:", error.message);
   }
 }
 
@@ -1078,26 +1061,10 @@ async function updateChannels(streams, token) {
   const channelsList = document.getElementById("channels-list");
   channelsList.innerHTML = '<div class="loader"></div>';
 
-  // Récupérer les avatars pour Twitch
-  const twitchStreamIds = streams
-    .filter(stream => stream.platform === "twitch")
-    .map(stream => stream.user_id);
-  const twitchProfiles = twitchStreamIds.length > 0 ? await getUserProfiles(twitchStreamIds, token) : {};
-
-  // Créer un cache d'avatars pour YouTube (utiliser avatar_url directement)
-  const youtubeProfiles = streams
-    .filter(stream => stream.platform === "youtube")
-    .reduce((acc, stream) => {
-      acc[stream.user_id] = stream.avatar_url || "https://yt3.ggpht.com/ytc/default-channel-img.jpg";
-      return acc;
-    }, {});
-
   const sortedStreams = sortStreams(streams, sortMode);
 
   reorderChannels(channelsList, sortedStreams, null, (stream) => {
-    const avatarUrl = stream.platform === "twitch"
-      ? twitchProfiles[stream.user_id] || "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png"
-      : youtubeProfiles[stream.user_id] || "https://yt3.ggpht.com/ytc/default-channel-img.jpg";
+    const avatarUrl = stream.avatar_url || "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png";
 
     if (stream.platform === "twitch") {
       const card = createTwitchLiveCard(stream, avatarUrl);
@@ -1269,67 +1236,59 @@ function truncateGameName(GameName) {
   return GameName.length > 20 ? GameName.substring(0, 20) + "..." : GameName;
 }
 
+// Crée une carte pour un stream Twitch
 function createTwitchLiveCard(stream, avatarUrl) {
   const truncatedTitle = truncateTitle(stream.title);
   const truncatedChannelName = truncateChannelName(stream.user_name);
-  const truncatedGameName = truncateGameName(stream.game_name);
-  const thumbnailUrl = stream.thumbnail_url
-    ? stream.thumbnail_url.replace('{width}', '1280').replace('{height}', '720')
-    : 'https://static-cdn.jtvnw.net/ttv-static/404_preview-1280x720.jpg';
-  const card = document.createElement('div');
-  card.className = `item-container red-border`;
-  card.setAttribute('data-user-id', stream.user_id); // Ajout de l'attribut data-user-id
+  const card = document.createElement("div");
+  card.className = `item-container twitch-purple-border`;
+  card.setAttribute('data-user-id', stream.user_id); // Conserver pour updateDurationCounters
   card.innerHTML = `
     <div class="header-row">
       <a href="https://www.twitch.tv/${stream.user_name.toLowerCase()}" target="_blank">
-        <img src="${avatarUrl}" alt="${stream.user_name}" class="channel-img">
+        <img src="${stream.avatar_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png'}" alt="${stream.user_name}" class="channel-img">
       </a>
       <div class="channel-info">
         <p class="channel-title" title="${stream.user_name}">${truncatedChannelName}</p>
         <p class="viewer-count">${formatViewers(stream.viewer_count)}</p>
-        <p class="stream-duration">${formatStreamDuration(stream.started_at)}</p>  
-        <p class="game-title" title="${stream.game_name || 'Inconnu'}">${truncatedGameName}</p>
+        <p class="game-title" title="${stream.game_name || 'Inconnu'}">${stream.game_name || 'Inconnu'}</p>
+        <p class="stream-duration">Démarré il y a <span class="duration-time" data-started-at="${stream.started_at}"></span></p>
       </div>
-    </div>  
-    <a href="https://www.twitch.tv/${stream.user_name.toLowerCase()}" target="_blank"><img src="${thumbnailUrl}" alt="${stream.user_name} thumbnail" class="thumbnail"></a>
-    <div class="card-content">  
-      <p class="stream-title" title="${stream.title || 'Aucun titre'}">${truncatedTitle}</p>
     </div>
+    <a href="https://www.twitch.tv/${stream.user_name.toLowerCase()}" target="_blank">
+      <img src="${stream.thumbnail_url ? stream.thumbnail_url.replace('{width}', '1280').replace('{height}', '720') : 'https://static-cdn.jtvnw.net/ttv-static/404_preview-1280x720.jpg'}" alt="${stream.user_name} thumbnail" class="thumbnail">
+    </a>
+    <p class="stream-title" title="${stream.title || 'Aucun titre'}">${truncatedTitle}</p>
   `;
   return card;
 }
 
+// Crée une carte pour un stream YouTube
 function createYoutubeLiveCard(stream, avatarUrl) {
   const truncatedTitle = truncateTitle(stream.title);
-  const truncatedChannelName = truncateChannelName(stream.user_name);
-  const truncatedGameName = truncateGameName(stream.game_name);
-  const thumbnailUrl = stream.thumbnail_url || 'https://i.ytimg.com/vi/default.jpg';
-
-  const card = document.createElement('div');
+  const card = document.createElement("div");
   card.className = `item-container red-border`;
-  card.setAttribute('data-user-id', stream.user_id);
+  card.setAttribute('data-user-id', stream.user_id); // Conserver pour updateDurationCounters
   card.innerHTML = `
     <div class="header-row">
       <a href="${stream.stream_url}" target="_blank">
-        <img src="${avatarUrl}" alt="${stream.user_name}" class="channel-img">
+        <img src="${stream.avatar_url || 'https://yt3.ggpht.com/ytc/default-channel-img.jpg'}" alt="${stream.user_name}" class="channel-img">
       </a>
       <div class="channel-info">
-        <p class="channel-title" title="${stream.user_name}">${truncatedChannelName}</p>
+        <p class="channel-title" title="${stream.user_name}">${stream.user_name}</p>
         <p class="viewer-count">N/A</p>
-        <p class="stream-duration">${formatStreamDuration(stream.started_at)}</p>
-        <p class="game-title" title="${stream.game_name || 'Inconnu'}">${truncatedGameName}</p>
+        <p class="stream-duration">Démarré il y a <span class="duration-time" data-started-at="${stream.started_at}"></span></p>
       </div>
     </div>
     <a href="${stream.stream_url}" target="_blank">
-      <img src="${thumbnailUrl}" alt="${stream.title} thumbnail" class="thumbnail">
+      <img src="${stream.thumbnail_url || 'https://i.ytimg.com/vi/default.jpg'}" alt="${stream.title} thumbnail" class="thumbnail">
     </a>
-    <div class="card-content">
-      <p class="stream-title" title="${stream.title || 'Aucun titre'}">${truncatedTitle}</p>
-    </div>
+    <p class="stream-title" title="${stream.title || 'Aucun titre'}">${truncatedTitle}</p>
   `;
   return card;
 }
 
+// Initialisation
 async function init() {
   console.log("Initialisation de l'application");
   await Promise.all([
@@ -1337,13 +1296,14 @@ async function init() {
     getFollowedChannels(),
     getYoutubeChannels(),
     getNotificationLogFromServer(),
-    getUpcomingVideos()
+    getUpcomingVideos(),
+    listenToNotifications(),
   ]);
   setInterval(getFollowedStreams, 60000);
   setInterval(getFollowedChannels, 60 * 60 * 1000);
   setInterval(getYoutubeChannels, 60 * 60 * 1000);
   setInterval(getUpcomingVideos, 60000);
-  listenToNotifications();
+  setInterval(listenToNotifications, 60000); // Vérifier les notifications toutes les minutes
 }
 
 init();
