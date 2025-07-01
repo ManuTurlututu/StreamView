@@ -509,6 +509,7 @@ async function saveNotificationSettings(settings) {
   console.log(`[${new Date().toISOString()}] Chaînes YouTube chargées: ${youtubeChannels.length} chaînes`);
   await loadYoutubeTokens();
   await loadTwitchTokens();
+  startYoutubeTokenRefresh(); // Ajouter cette ligne pour lancer le rafraîchissement périodique
 })();
 
 // Fonction pour rafraîchir le jeton d'accès Twitch
@@ -579,6 +580,22 @@ async function refreshYoutubeAccessToken(refreshToken) {
     }
     throw error;
   }
+}
+
+async function startYoutubeTokenRefresh() {
+  cron.schedule("*/30 * * * *", async () => {
+    console.log(`[${new Date().toISOString()}] Début du rafraîchissement périodique du jeton YouTube`);
+    if (!youtubeRefreshToken) {
+      console.error(`[${new Date().toISOString()}] Aucun refresh_token YouTube disponible`);
+      return;
+    }
+    try {
+      await refreshYoutubeAccessToken(youtubeRefreshToken);
+      console.log(`[${new Date().toISOString()}] Jeton YouTube rafraîchi avec succès`);
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] Erreur lors du rafraîchissement périodique du jeton YouTube:`, error.response?.data?.error?.message || error.message);
+    }
+  });
 }
 
 // Endpoint pour initier l'authentification Twitch
@@ -811,30 +828,14 @@ async function runPythonScript(accessToken) {
   }
 }
 
-// Endpoint pour déclencher manuellement le script Python
 app.post("/run-python", async (req, res) => {
   console.log(`[${new Date().toISOString()}] Requête /run-python reçue`);
+  if (!youtubeAccessToken) {
+    console.error(`[${new Date().toISOString()}] Aucun jeton d’accès YouTube disponible`);
+    return res.status(401).json({ error: "Aucun jeton YouTube disponible, veuillez vous connecter via /auth/youtube" });
+  }
+
   try {
-    const tokenDoc = await TokenApi.findOne({ platform: 'youtube' });
-    if (!tokenDoc || !tokenDoc.refreshToken) {
-      console.error(`[${new Date().toISOString()}] Aucun jeton ou refresh_token YouTube disponible dans TokenApi`);
-      return res.status(401).json({ error: "Aucun jeton YouTube disponible, veuillez vous connecter via /auth/youtube" });
-    }
-
-    // Vérifier si le jeton est expiré (lastUpdated + expiresIn < maintenant)
-    const now = Date.now();
-    const isTokenExpired = !tokenDoc.accessToken || !tokenDoc.lastUpdated || !tokenDoc.expiresIn || 
-                           (new Date(tokenDoc.lastUpdated).getTime() + tokenDoc.expiresIn * 1000 < now - 60 * 1000); // Marge de 60s
-
-    if (isTokenExpired) {
-      console.log(`[${new Date().toISOString()}] Jeton YouTube expiré ou absent, tentative de rafraîchissement`);
-      const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(tokenDoc.refreshToken);
-      youtubeAccessToken = newAccessToken;
-    } else {
-      youtubeAccessToken = tokenDoc.accessToken;
-      console.log(`[${new Date().toISOString()}] Jeton YouTube encore valide`);
-    }
-
     await runPythonScript(youtubeAccessToken);
     res.json({ success: true });
   } catch (error) {
