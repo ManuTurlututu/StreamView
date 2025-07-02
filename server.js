@@ -349,10 +349,11 @@ async function syncTwitchLiveStreams() {
   }
 }
 
-async function getFollowedStreams(accessToken, cursor = null) {
+async function getFollowedStreams(accessToken, cursor = null, retryCount = 0) {
   if (!twitchUserId) {
     throw new Error("Aucun ID utilisateur Twitch disponible");
   }
+  const maxRetries = 1; // Limite à une tentative de rafraîchissement
   let allStreams = [];
   let nextCursor = cursor;
 
@@ -374,8 +375,24 @@ async function getFollowedStreams(accessToken, cursor = null) {
       console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des streams Twitch:`, error.message);
       if (error.response) {
         console.error(`[${new Date().toISOString()}] Détails de l’erreur API:`, error.response.status, error.response.data);
+        // Gérer l'erreur 401 (jeton expiré)
+        if (error.response.status === 401 && twitchRefreshToken && retryCount < maxRetries) {
+          console.log(`[${new Date().toISOString()}] Erreur 401 détectée, tentative de rafraîchissement du jeton Twitch (tentative ${retryCount + 1}/${maxRetries})`);
+          try {
+            const { accessToken: newAccessToken, refreshToken: newRefreshToken } = await refreshAccessToken(twitchRefreshToken);
+            twitchAccessToken = newAccessToken;
+            twitchRefreshToken = newRefreshToken || twitchRefreshToken; // Garder l'ancien refreshToken si non fourni
+            await saveTwitchTokens(); // Sauvegarder les nouveaux jetons
+            console.log(`[${new Date().toISOString()}] Jeton Twitch rafraîchi avec succès, nouvelle tentative de récupération des streams`);
+            // Réessayer avec le nouveau jeton
+            return await getFollowedStreams(newAccessToken, cursor, retryCount + 1);
+          } catch (refreshError) {
+            console.error(`[${new Date().toISOString()}] Échec du rafraîchissement du jeton Twitch:`, refreshError.message);
+            throw refreshError;
+          }
+        }
       }
-      throw error;
+      throw error; // Propager les autres erreurs ou si maxRetries est atteint
     }
   } while (nextCursor);
 
@@ -809,7 +826,8 @@ async function getYoutubeSubscriptions(accessToken) {
 }
 
 // Fonction pour exécuter le script Python
-async function runPythonScript(accessToken) {
+async function runPythonScript(accessToken, retryCount = 0) {
+  const maxRetries = 1; // Limite à une tentative de rafraîchissement
   if (!accessToken) {
     console.error(`[${new Date().toISOString()}] Aucun jeton d'accès YouTube disponible`);
     return;
@@ -826,6 +844,26 @@ async function runPythonScript(accessToken) {
     }
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Erreur lors de l'exécution du script Python: ${error.message}`);
+    console.error(`[${new Date().toISOString()}] Sortie stdout du script: ${error.stdout || 'Aucune'}`);
+    // Vérifier si l'erreur est liée à un jeton invalide (401 ou 400)
+    const isTokenError = error.message.includes("401") || error.stdout?.includes("400 Client Error");
+    if (isTokenError && youtubeRefreshToken && retryCount < maxRetries) {
+      console.log(`[${new Date().toISOString()}] Erreur ${error.message.includes("401") ? "401" : "400"} détectée dans le script Python, tentative de rafraîchissement du jeton YouTube (tentative ${retryCount + 1}/${maxRetries})`);
+      try {
+        const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(youtubeRefreshToken);
+        youtubeAccessToken = newAccessToken;
+        await saveYoutubeTokens();
+        console.log(`[${new Date().toISOString()}] Jeton YouTube rafraîchi avec succès, nouvelle tentative d'exécution du script Python`);
+        return await runPythonScript(newAccessToken, retryCount + 1);
+      } catch (refreshError) {
+        console.error(`[${new Date().toISOString()}] Échec du rafraîchissement du jeton YouTube: ${refreshError.message}`);
+        if (refreshError.response) {
+          console.error(`[${new Date().toISOString()}] Détails de l’erreur de rafraîchissement: ${refreshError.response.status} ${JSON.stringify(refreshError.response.data)}`);
+        }
+        throw refreshError;
+      }
+    }
+    throw error; // Propager les autres erreurs ou si maxRetries est atteint
   }
 }
 
@@ -1161,13 +1199,19 @@ const APP_URL = process.env.APP_URL || 'https://your-app-name.onrender.com';
 // cron job python
 cron.schedule("*/1 * * * *", async () => {
   console.log(`[${new Date().toISOString()}] Lancement du script Python planifié...`);
+  console.log(`[${new Date().toISOString()}] État des jetons YouTube - accessToken: ${!!youtubeAccessToken}, refreshToken: ${!!youtubeRefreshToken}`);
   if (!youtubeAccessToken && youtubeRefreshToken) {
     console.log(`[${new Date().toISOString()}] Jeton d'accès manquant, tentative de rafraîchissement...`);
     try {
       const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(youtubeRefreshToken);
       youtubeAccessToken = newAccessToken;
+      console.log(`[${new Date().toISOString()}] Jeton d'accès YouTube rafraîchi avec succès`);
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Échec du rafraîchissement du jeton YouTube:`, error.message);
+      console.error(`[${new Date().toISOString()}] Échec du rafraîchissement du jeton YouTube: ${error.message}`);
+      if (error.response) {
+        console.error(`[${new Date().toISOString()}] Détails de l’erreur de rafraîchissement: ${error.response.status} ${JSON.stringify(error.response.data)}`);
+      }
+      return;
     }
   }
   if (youtubeAccessToken) {

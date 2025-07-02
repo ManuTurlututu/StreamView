@@ -57,6 +57,7 @@ def validate_access_token(access_token):
         
         if 'error' in token_info or 'error_description' in token_info:
             log_message(f"Erreur : Jeton d'accès invalide - {token_info.get('error_description', 'Erreur non spécifiée')}")
+            log_message(f"Détails complets de la réponse : {json.dumps(token_info, indent=2)}")
             return False
         
         if 'expires_in' in token_info:
