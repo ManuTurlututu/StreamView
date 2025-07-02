@@ -764,8 +764,8 @@ function sortStreams(streams, mode) {
       return 0;
     }
     if (mode === "viewers") {
-      const aViewers = a.platform === "twitch" ? (a.viewer_count || 0) : 0;
-      const bViewers = b.platform === "twitch" ? (b.viewer_count || 0) : 0;
+      const aViewers = a.viewer_count || 0; // Prendre viewer_count pour Twitch et YouTube
+      const bViewers = b.viewer_count || 0; // Prendre viewer_count pour Twitch et YouTube
       return bViewers - aViewers;
     } else if (mode === "name") {
       const aName = a.user_name || "";
@@ -1276,7 +1276,7 @@ function createYoutubeLiveCard(stream, avatarUrl) {
       </a>
       <div class="channel-info">
         <p class="channel-title" title="${stream.user_name}">${stream.user_name}</p>
-        <p class="viewer-count">N/A</p>
+        <p class="viewer-count">${formatViewers(stream.viewer_count)}</p>
         <p class="stream-duration">Démarré il y a <span class="duration-time" data-started-at="${stream.started_at}"></span></p>
       </div>
     </div>

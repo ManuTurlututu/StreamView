@@ -162,6 +162,7 @@ def process_url(channel_data, session, access_token):
             title = ''
             video_thumbnail = ''
             video_url = ''
+            viewer_count = 0  # Valeur par défaut
             search_start = max(0, live_pos - 10000)
             search_range = html_content[search_start:live_pos]
 
@@ -183,16 +184,20 @@ def process_url(channel_data, session, access_token):
                 video_thumbnail = thumbnail_search.group(1)
                 video_thumbnail = video_thumbnail.encode().decode('utf-8', errors='replace')
 
-             # Recherche du dernier videoId avant "style":"LIVE"
+            # Recherche du dernier videoId avant "style":"LIVE"
             video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]+)"', search_range)
             if video_ids:
                 video_id = video_ids[-1]  # Prendre le dernier videoId
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
                 # Vérification contextuelle : confirmer que c'est une vidéo live
-                if re.search(r'"viewCountText":\s*{"runs":\[{"text":"[^"]+"},{"text":"watching"}]', search_range):
-                    pass  # Le videoId est valide pour une vidéo live
+                view_count_search = re.search(r'"viewCountText":\s*{\s*"runs":\s*\[\s*{\s*"text":\s*"([\d\s ,]+)"\s*},\s*{\s*"text":\s*"[^"]*"\s*}\s*\]', search_range, re.DOTALL)
+                if view_count_search:
+                    viewer_count_str = view_count_search.group(1)  # Ex. "11,653"
+                    viewer_count_str = ''.join(filter(str.isdigit, viewer_count_str))  # Supprime tout sauf les chiffres
+                    viewer_count = int(viewer_count_str.replace(',', ''))  # Convertir en 11653
                 else:
-                    log_message(f"Attention : Le videoId {video_id} peut ne pas correspondre à une vidéo live à la position {live_pos}")
+                    log_message(f"viewer_count non trouvé pour {channel_name}")
+
             else:
                 log_message(f"videoId non trouvé (live) avant la position {live_pos} dans {search_start}-{live_pos} pour {url}")
                 continue  # Ignorer cette vidéo si aucun videoId n'est trouvé
@@ -205,7 +210,9 @@ def process_url(channel_data, session, access_token):
                 "chUrl": url,
                 "chTitle": channel_name,
                 "chThumbnail": ch_thumbnail,
-                "status": "live"
+                "status": "live",
+                "viewer_count": viewer_count,  # Nouveau champ
+                "timestamp": datetime.now().isoformat()
             })
 
         upcoming_count = sum(1 for r in results if r["status"] == "upcoming")

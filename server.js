@@ -102,6 +102,7 @@ const youtubeVideoSchema = new mongoose.Schema({
   chTitle: { type: String, required: true },
   chThumbnail: { type: String, required: true },
   status: { type: String, required: true },
+  viewer_count:{ type: Number, default: 0 },
   timestamp: { type: String, required: true }
 }, { collection: 'youtubeVideos' }); // Forcer le nom de la collection
 
@@ -218,7 +219,7 @@ async function syncYoutubeLiveVideos() {
         title: video.vidTitle || 'Aucun titre',
         thumbnail_url: video.vidThumbnail || 'https://i.ytimg.com/img/no_thumbnail.jpg',
         avatar_url: video.chThumbnail || 'https://yt3.ggpht.com/ytc/default-channel-img.jpg',
-        viewer_count: 0,
+        viewer_count: video.viewer_count,
         started_at: startTime, // Conversion explicite en timestamp
         game_name: 'Inconnu',
         stream_url: video.vidUrl,
