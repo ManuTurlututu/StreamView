@@ -48,9 +48,15 @@ mongoose.connect(process.env.MONGODB_URI)
 .then(() => console.log(`[${new Date().toISOString()}] Connecté à MongoDB`))
 .catch(error => console.error(`[${new Date().toISOString()}] Erreur de connexion à MongoDB:`, error.message));
 
+// Schéma pour les paramètres des cloches de notification
+const channelsBellsSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  platform: { type: String, required: true, enum: ['twitch', 'youtube'] },
+  channelId: { type: String, required: true },
+  notificationsEnabled: { type: Boolean, required: true, default: false },
+}, { collection: 'ChannelsBells', timestamps: true });
 
-
-
+const ChannelsBells = mongoose.model('ChannelsBells', channelsBellsSchema);
 
 // Schéma pour les notifications
 const notificationSchema = new mongoose.Schema({
@@ -495,27 +501,36 @@ app.use("/refresh-token", refreshTokenLimiter);
 let notificationSettings = [];
 let youtubeChannels = [];
 
-// Fonction pour charger les paramètres de notification depuis le fichier
+// Charger les paramètres de notification depuis MongoDB
 async function loadNotificationSettings() {
   try {
-    const data = await fs.readFile(NOTIFICATIONS_FILE, "utf8");
-    return JSON.parse(data) || [];
+    const settings = await ChannelsBells.find({});
+    console.log(`[${new Date().toISOString()}] Paramètres de notification chargés depuis ChannelsBells: ${settings.length} paramètres`);
+    return settings.map(setting => ({
+      userId: setting.userId,
+      settingKey: `${setting.platform}_${setting.channelId}`,
+      notificationsEnabled: setting.notificationsEnabled
+    }));
   } catch (error) {
-    if (error.code === "ENOENT") {
-      return [];
-    }
-    console.error(`[${new Date().toISOString()}] Erreur lors de la lecture de notifications.json:`, error.message);
+    console.error(`[${new Date().toISOString()}] Erreur lors de la lecture des paramètres de notification depuis ChannelsBells:`, error.message);
     return [];
   }
 }
 
-// Fonction pour sauvegarder les paramètres de notification dans le fichier
+// Sauvegarder les paramètres de notification dans MongoDB
 async function saveNotificationSettings(settings) {
   try {
-    await fs.writeFile(NOTIFICATIONS_FILE, JSON.stringify(settings, null, 2));
-    console.log(`[${new Date().toISOString()}] Paramètres de notification sauvegardés dans notifications.json`);
+    const operations = settings.map(setting => ({
+      updateOne: {
+        filter: { userId: setting.userId, platform: setting.settingKey.split('_')[0], channelId: setting.settingKey.split('_')[1] },
+        update: { $set: { notificationsEnabled: setting.notificationsEnabled } },
+        upsert: true
+      }
+    }));
+    await ChannelsBells.bulkWrite(operations);
+    console.log(`[${new Date().toISOString()}] Paramètres de notification sauvegardés dans ChannelsBells: ${settings.length} paramètres`);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde de notifications.json:`, error.message);
+    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde des paramètres de notification dans ChannelsBells:`, error.message);
   }
 }
 
@@ -1011,39 +1026,8 @@ app.get("/get-youtube-channels", async (req, res) => {
   }
 });
 
-// Endpoint pour mettre à jour les paramètres de notification
-app.post("/set-notification", async (req, res) => {
-  const { userId, broadcasterId, notificationsEnabled } = req.body;
-
-  console.log(`[${new Date().toISOString()}] Requête reçue pour /set-notification:`, { userId, broadcasterId, notificationsEnabled });
-
-  if (!userId || !broadcasterId || typeof notificationsEnabled !== "boolean") {
-    console.error(`[${new Date().toISOString()}] Paramètres invalides:`, { userId, broadcasterId, notificationsEnabled });
-    return res.status(400).json({ error: "Paramètres manquants ou invalides" });
-  }
-
-  try {
-    const existingSetting = notificationSettings.find(
-      (setting) => setting.userId === userId && setting.broadcasterId === broadcasterId
-    );
-
-    if (existingSetting) {
-      existingSetting.notificationsEnabled = notificationsEnabled;
-    } else {
-      notificationSettings.push({ userId, broadcasterId, notificationsEnabled });
-    }
-
-    await saveNotificationSettings(notificationSettings);
-    console.log(`[${new Date().toISOString()}] Paramètres de notification mis à jour:`, { userId, broadcasterId, notificationsEnabled });
-    res.json({ success: true });
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la mise à jour des paramètres de notification:`, error.message);
-    res.status(500).json({ error: "Erreur serveur lors de la mise à jour des notifications" });
-  }
-});
-
 // Endpoint pour récupérer les paramètres de notification
-app.get("/get-notifications", (req, res) => {
+app.get("/get-notifications", async (req, res) => {
   const userId = req.query.userId;
   console.log(`[${new Date().toISOString()}] Requête reçue pour /get-notifications:`, { userId });
 
@@ -1053,18 +1037,42 @@ app.get("/get-notifications", (req, res) => {
   }
 
   try {
-    const settings = notificationSettings
-      .filter((setting) => setting.userId === userId)
-      .map((setting) => ({
-        broadcasterId: setting.broadcasterId,
-        notificationsEnabled: setting.notificationsEnabled,
-      }));
-
-    console.log(`[${new Date().toISOString()}] Paramètres de notification renvoyés: ${settings.length} paramètres`);
-    res.json(settings);
+    const settings = await ChannelsBells.find({ userId });
+    const formattedSettings = settings.map(setting => ({
+      platform: setting.platform,
+      channelId: setting.channelId,
+      notificationsEnabled: setting.notificationsEnabled
+    }));
+    console.log(`[${new Date().toISOString()}] Paramètres de notification renvoyés: ${formattedSettings.length} paramètres`);
+    res.json(formattedSettings);
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des paramètres de notification:`, error.message);
     res.status(500).json({ error: "Erreur serveur lors de la récupération des notifications" });
+  }
+});
+
+// Endpoint pour mettre à jour les paramètres de notification
+app.post("/set-notification", async (req, res) => {
+  const { userId, platform, channelId, notificationsEnabled } = req.body;
+
+  console.log(`[${new Date().toISOString()}] Requête reçue pour /set-notification:`, { userId, platform, channelId, notificationsEnabled });
+
+  if (!userId || !platform || !channelId || typeof notificationsEnabled !== "boolean") {
+    console.error(`[${new Date().toISOString()}] Paramètres invalides:`, { userId, platform, channelId, notificationsEnabled });
+    return res.status(400).json({ error: "Paramètres manquants ou invalides" });
+  }
+
+  try {
+    await ChannelsBells.updateOne(
+      { userId, platform, channelId },
+      { $set: { notificationsEnabled, timestamps: true } },
+      { upsert: true }
+    );
+    console.log(`[${new Date().toISOString()}] Paramètres de notification mis à jour dans ChannelsBells:`, { userId, platform, channelId, notificationsEnabled });
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erreur lors de la mise à jour des paramètres de notification:`, error.message);
+    res.status(500).json({ error: "Erreur serveur lors de la mise à jour des notifications" });
   }
 });
 

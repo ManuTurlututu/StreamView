@@ -561,7 +561,7 @@ async function getNotificationSettings(userId) {
 
 async function setNotificationSetting(userId, platform, channelId, enabled) {
   try {
-    console.log(`[${new Date().toISOString()}] Envoi de la requête setNotificationSetting:`, { userId, platform, channelId, notificationsEnabled: enabled });
+    console.log("Envoi de la requête setNotificationSetting:", { userId, platform, channelId, notificationsEnabled: enabled });
     const response = await fetch("/set-notification", {
       method: "POST",
       headers: {
@@ -578,24 +578,21 @@ async function setNotificationSetting(userId, platform, channelId, enabled) {
       const errorText = await response.text();
       throw new Error(`Échec de la mise à jour des paramètres de notification: ${response.status} ${response.statusText} - ${errorText}`);
     }
-    const result = await response.json();
-    if (!result.success) {
-      throw new Error("Réponse serveur non réussie");
-    }
     notificationSettings.set(`${platform}_${channelId}`, enabled);
-    console.log(`[${new Date().toISOString()}] Notification mise à jour avec succès:`, { platform, channelId, enabled });
+    console.log("Notification mise à jour avec succès:", { platform, channelId, enabled });
 
     if (enabled) {
       const stream = currentStreams.find((s) => s.user_id === channelId && s.platform === platform);
       if (stream) {
-        console.log(`[${new Date().toISOString()}] Chaîne déjà en direct, déclenchement de l'alerte:`, stream);
+        console.log("Chaîne déjà en direct, déclenchement de l'alerte:", stream);
         showNotification(stream);
       }
     }
 
     return true;
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la mise à jour des paramètres de notification pour ${platform}_${channelId}:`, error.message);
+    console.error("Erreur lors de la mise à jour des paramètres de notification :", error);
+    showNotificationError(`Impossible de mettre à jour les notifications: ${error.message}`);
     return false;
   }
 }
@@ -1229,9 +1226,7 @@ function createYoutubeLiveCard(stream, avatarUrl) {
 }
 
 function createChannelCard(channel) {
-  const settingKey = `${channel.platform}_${channel.id}`;
-  const notificationsEnabled = notificationSettings.get(settingKey) || false;
-  console.log(`Création de la carte pour la chaîne ${channel.id} (${channel.platform}), notifications activées: ${notificationsEnabled}`); // Log de débogage
+  const notificationsEnabled = notificationSettings.get(`${channel.platform}_${channel.id}`) || false;
   const card = document.createElement("a");
   card.className = `channel-card ${channel.platform}-border ${notificationsEnabled ? "notifications-enabled" : ""}`;
   card.href = channel.url;
@@ -1251,37 +1246,20 @@ function createChannelCard(channel) {
   `;
 
   const bell = card.querySelector(".notification-bell");
-  let isProcessing = false; // Empêcher les clics multiples
   bell.addEventListener("click", async (e) => {
     e.preventDefault();
-    if (isProcessing) return; // Ignorer si une requête est en cours
-    isProcessing = true;
-
-    const userId = await getUserId(currentTwitchToken || currentYoutubeToken) || "youtube_user";
+    const userId = await getUserId(currentTwitchToken || currentYoutubeToken);
     if (!userId) {
       showNotificationError("Utilisateur non connecté. Veuillez vous reconnecter.");
-      isProcessing = false;
       return;
     }
-
-    const currentState = notificationSettings.get(settingKey) || false;
+    const currentState = notificationSettings.get(`${channel.platform}_${channel.id}`) || false;
     const newState = !currentState;
-
-    // Mise à jour optimiste de l'UI
-    card.classList.toggle("notifications-enabled", newState);
-    bell.classList.toggle("active", newState);
-    console.log(`[${new Date().toISOString()}] Clic sur la cloche: ${settingKey} -> ${newState}`);
-
     const success = await setNotificationSetting(userId, channel.platform, channel.id, newState);
-    if (!success) {
-      // Revertir l'état en cas d'échec
-      notificationSettings.set(settingKey, currentState);
-      card.classList.toggle("notifications-enabled", currentState);
-      bell.classList.toggle("active", currentState);
-      showNotificationError("Échec de la mise à jour de la notification. Veuillez réessayer.");
+    if (success) {
+      card.classList.toggle("notifications-enabled", newState);
+      bell.classList.toggle("active", newState);
     }
-
-    isProcessing = false;
   });
 
   return card;
@@ -1305,14 +1283,6 @@ async function displayChannels() {
 
 async function init() {
   console.log("Initialisation de l'application");
-  // Charger les paramètres de notification en premier pour s'assurer qu'ils sont disponibles
-  const userId = await getUserId(await getTwitchAccessToken() || await getYoutubeAccessToken() || "youtube_user");
-  if (userId) {
-    await getNotificationSettings(userId);
-    console.log('Paramètres de notification chargés:', Array.from(notificationSettings.entries()));
-  } else {
-    console.error("Impossible de récupérer l'ID utilisateur pour les notifications");
-  }
   await Promise.all([
     getFollowedStreams(),
     getFollowedChannels(),

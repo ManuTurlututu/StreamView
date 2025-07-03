@@ -1,5 +1,4 @@
 @import url('https://fonts.googleapis.com/css2?family=Lora:wght@700&display=swap');
-
 /* Réinitialisation et styles globaux */
 body {
   font-family: Arial, sans-serif;
@@ -9,7 +8,6 @@ body {
   padding: 5px;
   min-height: 100vh;
 }
-
 /* Conteneur principal */
 .container {
   width: 100%;
@@ -18,7 +16,6 @@ body {
   border-radius: 8px;
   padding-bottom: 10px;
 }
-
 /* Onglets */
 .tabs {
   display: flex;
@@ -27,7 +24,6 @@ body {
   border-bottom: 1px solid #a970ff;
   margin-bottom: 10px;
 }
-
 .tab {
   padding: 5px;
   text-align: center;
@@ -39,17 +35,14 @@ body {
   border-radius: 4px 4px 0 0;
   min-width: 50px;
 }
-
 .tab:hover {
   background-color: #2a2a2e;
 }
-
 .tab.active {
   background-color: #a970ff;
   color: #18181b;
   font-weight: bold;
 }
-
 .tab img {
   width: 20px;
   height: 15px;
@@ -57,86 +50,66 @@ body {
   margin-right: 5px;
   margin-top: -2px;
 }
-
 .tab img.twitch-icon {
   width: 24px;
   height: 24px;
 }
-
 .tab svg.settings-icon {
   width: 18px;
   height: 18px;
   vertical-align: middle;
   fill: #efeff1;
 }
-
 .tab.active svg.settings-icon {
   fill: #18181b;
 }
-
 /* Contenu des onglets */
 .tab-content {
   display: none;
 }
-
 .tab-content.active {
   display: block;
 }
-
 /* Grilles pour Live et Upcoming */
 #channels-list,
 #upcoming-channels-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-  gap: 7px;
+  gap: 20px;
   width: 100%;
   justify-items: center;
-  scroll-behavior: smooth;
+  scroll-behavior: smooth; /* Défilement doux */
 }
-
-/* Liste pour Channels */
-#followed-channels-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  max-width: 600px;
-  margin: 0 auto;
-}
-
 /* Carte vidéo (Live et Upcoming) */
 .item-container {
   width: 270px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 18px;
+  padding: 15px;
   border-radius: 8px;
   border: 2px solid #ffffff;
   background-color: #0f0f0f;
   text-decoration: none;
   color: inherit;
-  position: relative;
+  position: relative; 
 }
-
 .item-container.yellow-border {
   border: 2px solid #ffff00;
 }
-
 .item-container.red-border {
   border: 2px solid red;
 }
-
 .twitch-purple-border {
   border: 2px solid #612fac;
 }
 
 .twitch-border {
-  border: 2px solid #612fac;
+  border: 2px solid #612fac; /* Violet pour Twitch */
 }
 
 .youtube-border {
-  border: 2px solid red;
+  border: 2px solid red; /* Rouge pour YouTube */
 }
 
 .header-row {
@@ -146,19 +119,16 @@ body {
   width: 100%;
   margin-bottom: 10px;
 }
-
 .schedule-info {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
 }
-
 .schedule-info p {
   font-size: 16px;
   margin: 0;
   text-align: right;
 }
-
 .bell-button {
   transition: transform 0.3s ease;
   cursor: pointer;
@@ -168,22 +138,18 @@ body {
   align-items: center;
   justify-content: center;
 }
-
 .bell-button:hover {
   transform: scale(1.2);
 }
-
 .bell-button svg {
   width: 100%;
   height: 100%;
   fill: #ffffff;
   transition: fill 0.3s ease;
 }
-
 .bell-button.yellow svg {
   fill: #ffff00;
 }
-
 .thumbnail {
   transition: transform 0.3s;
   width: 280px;
@@ -193,13 +159,11 @@ body {
   border-radius: 15px;
   margin: 0 -5px;
   display: block;
-  z-index: 5;
+   z-index: 5;
 }
-
 .thumbnail:hover {
   transform: scale(1.04);
 }
-
 .channel-img {
   transition: transform 0.3s;
   width: 120px;
@@ -213,58 +177,51 @@ body {
   z-index: 10;
   border: 2px solid darkred;
 }
-
 .channel-img:hover {
   transform: scale(1.1);
 }
-
-.item-container .card-content {
+.card-content {
   width: 100%;
   text-align: center;
 }
-
-.item-container .card-content .live-status,
-.item-container .card-content .subscription-date,
-.item-container .card-content .notification-timestamp {
+.card-content .live-status,
+.card-content .subscription-date,
+.card-content .notification-timestamp {
   margin: 4px 0;
 }
-
-.item-container .card-content {
+.card-content{
   font-size: 16px;
   font-weight: bold;
   color: #efeff1;
 }
-
-.item-container .channel-title {
+.channel-title {
   font-family: 'Lora', serif;
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 700; /* Équivalent à bold */
   text-align: right;
   color: #efeff1;
-  margin: 0 -7px;
+  margin : 0 -7px;
   text-shadow: 
-    -1px -1px 0 #000,  
-    1px -1px 0 #000,
-    -1px 1px 0 #000,
-    1px 1px 0 #000;
+  -1px -1px 0 #000,  
+   1px -1px 0 #000,
+  -1px  1px 0 #000,
+   1px  1px 0 #000; /* Contour noir */
 }
-
-.item-container .channel-info {
+.channel-info {
   align-items: right;
-  margin-top: -18px;
-  margin-right: -5px;
+  margin-top: -8px;
+  margin-right: -25x;
   margin-left: -360px;
-  z-index: 10;
+  z-index: 10;    
 }
-
-.item-container .viewer-count {
+.viewer-count{
   text-align: right;
   font-size: 18px;
-  color: rgb(235, 38, 52);
-  margin: 0 -6px;
+  color: #efeff1;
+  margin : 0 -6px;
+  color: rgb(235, 38, 52)
 }
-
-.item-container .stream-title {
+.stream-title {
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -272,34 +229,30 @@ body {
   margin-top: 7px;
   margin-bottom: -7px;
 }
-
-.item-container .game-title {
+.game-title {
   text-align: right;
   font-size: 14px;
   color: #a970ff;
   margin: 0 -6px;
 }
-
-.item-container .stream-duration {
+.stream-duration {
   text-align: right;
   font-size: 14px;
   margin: 0 -6px;
 }
 
-.item-container .live-status {
+.live-status {
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 16px;
   color: #adadb8;
 }
-
-.item-container .card-content .subscription-date,
-.item-container .card-content .notification-timestamp {
+.card-content .subscription-date,
+.card-content .notification-timestamp {
   font-size: 14px;
   color: #adadb8;
 }
-
 .status-indicator {
   width: 8px;
   height: 8px;
@@ -307,89 +260,9 @@ body {
   border-radius: 50%;
   margin-right: 5px;
 }
-
-/* Carte pour Channels */
-.channel-card {
-  display: flex;
-  align-items: center;
-  padding: 10px;
-  margin-bottom: 10px;
-  background-color: #202024;
-  border-radius: 4px;
-  text-decoration: none;
-  color: #fff;
-  transition: background-color 0.2s, border 0.2s;
-  position: relative;
-  width: 100%;
-  max-width: 600px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.channel-card.twitch-border {
-  border: 2px solid #612fac;
-}
-
-.channel-card.youtube-border {
-  border: 2px solid red;
-}
-
-.channel-card.notifications-enabled {
-  border: 2px solid #ffd700;
-}
-
-.channel-card:hover {
-  background-color: #2a2a2e;
-}
-
-.channel-card .avatar {
-  width: 50px;
-  height: 50px;
-  margin-right: 10px;
-}
-
-.channel-card .avatar img {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.channel-card .card-content {
-  flex: 1;
-}
-
-.channel-card .channel-title {
-  font-family: 'Lora', serif;
-  font-size: 20px;
-  font-weight: 700;
-  color: #efeff1;
-  margin: 0;
-}
-
-.channel-card .subscription-date {
-  font-size: 14px;
-  color: #adadb8;
-  margin: 4px 0 0;
-}
-
-.channel-card .notification-bell {
-  cursor: pointer;
-  width: 24px;
-  height: 24px;
-  fill: #efeff1;
-  transition: fill 0.2s;
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.channel-card .notification-bell.active {
-  fill: #ffd700;
-}
-
-/* Carte pour Notifications */
+/* Cartes pour Follow, YouTube Sub, Notifications */
+.follow-card,
+.yt-sub-card,
 .notification-card {
   display: flex;
   align-items: center;
@@ -402,48 +275,25 @@ body {
   transition: background-color 0.2s, border 0.2s;
   position: relative;
 }
-
+.follow-card:hover,
+.yt-sub-card:hover,
 .notification-card:hover {
   background-color: #2a2a2e;
 }
-
-.notification-card .avatar {
+.follow-card.notifications-enabled {
+  border: 2px solid #ffd700;
+}
+.avatar {
   width: 50px;
   height: 50px;
   margin-right: 10px;
 }
-
-.notification-card .avatar img {
+.avatar img {
   width: 100%;
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
 }
-
-.notification-card .card-content {
-  flex: 1;
-}
-
-.notification-card .channel-title {
-  font-family: 'Lora', serif;
-  font-size: 20px;
-  font-weight: 700;
-  color: #efeff1;
-  margin: 0;
-}
-
-.notification-card .stream-title {
-  font-size: 14px;
-  color: #adadb8;
-  margin: 4px 0;
-}
-
-.notification-card .notification-timestamp {
-  font-size: 14px;
-  color: #adadb8;
-  margin: 4px 0 0;
-}
-
 /* Boutons de connexion */
 .login-button,
 .youtube-login-button {
@@ -459,23 +309,18 @@ body {
   max-width: 280px;
   height: 20px;
 }
-
 .login-button {
   background-color: #467a57;
 }
-
 .login-button:hover {
   background-color: #b43d3d;
 }
-
 .youtube-login-button {
   background-color: #ff4444;
 }
-
 .youtube-login-button:hover {
   background-color: rgb(129, 129, 213);
 }
-
 /* Conteneur de tri et recherche */
 .sort-search-container {
   display: flex;
@@ -483,7 +328,6 @@ body {
   margin-bottom: 15px;
   max-width: 298px;
 }
-
 .sort-selector,
 .search-input {
   flex: 1;
@@ -494,21 +338,17 @@ body {
   border-radius: 4px;
   font-size: 14px;
 }
-
 .sort-selector:focus,
 .search-input:focus {
   outline: none;
   border-color: grey;
 }
-
 .search-input {
   max-width: 138px;
 }
-
 .search-input::placeholder {
   color: #adadb8;
 }
-
 /* Notifications */
 .notifications-container {
   position: fixed;
@@ -520,7 +360,6 @@ body {
   max-width: 300px;
   z-index: 1000;
 }
-
 .notification {
   background-color: #202024;
   color: #efeff1;
@@ -532,14 +371,26 @@ body {
   align-items: center;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
-
 .notification-close {
   cursor: pointer;
   color: #ff5555;
   font-weight: bold;
   margin-left: 10px;
 }
-
+.notification-bell {
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  fill: #efeff1;
+  transition: fill 0.2s;
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.notification-bell.active {
+  fill: #ffd700;
+}
 /* Loader */
 .loader {
   text-align: center;
@@ -547,19 +398,16 @@ body {
   font-size: 14px;
   margin-bottom: 20px;
 }
-
 .loader::after {
   content: "Chargement.";
   display: inline-block;
   animation: dots 1.5s infinite;
 }
-
 @keyframes dots {
   0% { content: "Chargement."; }
   33% { content: "Chargement.."; }
   66% { content: "Chargement..."; }
 }
-
 /* Classes utilitaires */
 .text-gray-300 { color: #d1d5db; }
 .text-blue-400 { color: #3ea6ff; }
@@ -567,7 +415,6 @@ body {
 .font-bold { font-weight: 700; }
 .hover\:text-blue-400:hover { color: #3ea6ff; }
 .mb-2 { margin-bottom: 0.5rem; }
-
 /* Erreurs */
 .error {
   color: #ff5555;
