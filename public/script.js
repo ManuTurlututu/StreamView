@@ -696,7 +696,7 @@ async function getUpcomingVideos() {
     }
     const videos = await response.json();
     console.log("Vidéos YouTube récupérées:", videos.length, "vidéos");
-    console.log("Exemple de vidéo:", videos[0] || "Aucune vidéo");
+    //console.log("Exemple de vidéo:", videos[0] || "Aucune vidéo");
     console.log("Statuts uniques:", [...new Set(videos.map(stream => stream.status || "undefined"))]);
     currentUpcomingStreams = videos;
     console.log("currentUpcomingStreams mis à jour:", currentUpcomingStreams.length, "vidéos");
@@ -1202,7 +1202,7 @@ async function updateChannels(streams, token) {
       card.setAttribute("data-user-id", stream.user_id);
       return card;
     } else {
-      console.log("Création de carte YouTube pour:", stream.user_id);
+      //console.log("Création de carte YouTube pour:", stream.user_id);
       const card = createYoutubeLiveCard(stream, avatarUrl);
       card.setAttribute("data-user-id", stream.user_id);
       return card;
