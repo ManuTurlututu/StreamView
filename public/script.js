@@ -981,6 +981,16 @@ async function getNotificationLogFromServer() {
   }
 }
 
+function filterNotifications() {
+  const notificationList = document.getElementById("notification-log-list");
+  const cards = notificationList.querySelectorAll(".notification-card");
+  cards.forEach((card) => {
+    const channelName = card.querySelector(".channel-title").textContent.toLowerCase();
+    const streamTitle = card.querySelector(".stream-title").textContent.toLowerCase();
+    card.style.display = searchNotificationsQuery && !channelName.includes(searchNotificationsQuery.toLowerCase()) && !streamTitle.includes(searchNotificationsQuery.toLowerCase()) ? "none" : "flex";
+  });
+}
+
 function listenToNotifications() {
   console.log(`[${new Date().toISOString()}] Initialisation du flux SSE /notifications-stream`);
   let eventSource;
