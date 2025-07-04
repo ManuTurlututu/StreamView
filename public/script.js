@@ -95,6 +95,8 @@ document.addEventListener("DOMContentLoaded", () => {
         displayChannels();
       } else if (tab.dataset.tab === "notification-tab") {
         stopDurationUpdates();
+        console.log(`[${new Date().toISOString()}] Onglet Notifications activé, mise à jour en cours`);
+        getNotificationLogFromServer(); // Recharger les notifications pour s'assurer qu'elles sont à jour
         updateNotificationLog();
         filterNotifications();
       } else if (tab.dataset.tab === "settings") {
@@ -979,45 +981,89 @@ async function getNotificationLogFromServer() {
   }
 }
 
-async function listenToNotifications() {
-  try {
-    console.log(`[${new Date().toISOString()}] Vérification notifications via /get-recent-notifications`);
-    const response = await fetch('/get-recent-notifications', {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    });
+function listenToNotifications() {
+  console.log(`[${new Date().toISOString()}] Initialisation du flux SSE /notifications-stream`);
+  let eventSource;
 
-    if (!response.ok) {
-      throw new Error(`Erreur HTTP: ${response.status}`);
-    }
+  const connectSSE = () => {
+    console.log(`[${new Date().toISOString()}] Connexion au flux SSE /notifications-stream`);
+    eventSource = new EventSource('/notifications-stream');
 
-    const notifications = await response.json();
-    console.log(`[${new Date().toISOString()}] ${notifications.length} notifications reçues`);
+    eventSource.onopen = function() {
+      console.log(`[${new Date().toISOString()}] Connexion SSE établie`);
+      // Recharger les notifications récentes pour s'assurer que rien n'a été manqué
+      getNotificationLogFromServer();
+    };
 
-    const newNotifications = notifications.filter(n => n.timestamp > lastCheckTimestamp && !lastNotificationIds.has(n.id));
+    eventSource.onmessage = function(event) {
+      if (event.data === ': ping') {
+        console.log(`[${new Date().toISOString()}] Ping SSE reçu`);
+        return;
+      }
 
-    lastCheckTimestamp = Date.now();
+      try {
+        const notification = JSON.parse(event.data);
+        if (!notification.id || lastNotificationIds.has(notification.id)) {
+          console.log(`[${new Date().toISOString()}] Notification ignorée (dupliquée ou invalide):`, notification.id);
+          return;
+        }
 
-    for (const notif of newNotifications) {
-      console.log(`[${new Date().toISOString()}] Nouvelle notification:`, notif.user_name);
-      await showNotification({
-        user_id: notif.user_id,
-        user_name: notif.user_name,
-        title: notif.title,
-        avatar_url: notif.avatar_url,
-        game_name: "Inconnu",
-        started_at: notif.timestamp,
-        stream_url: notif.platform === 'youtube' ? notif.vidUrl : `https://www.twitch.tv/${notif.user_name.toLowerCase()}`,
-      });
-      lastNotificationIds.add(notif.id);
-    }
+        console.log(`[${new Date().toISOString()}] Nouvelle notification via SSE:`, {
+          id: notification.id,
+          user_name: notification.user_name,
+          title: notification.title,
+          platform: notification.platform,
+          timestamp: notification.timestamp
+        });
+        lastNotificationIds.add(notification.id);
 
-    if (lastNotificationIds.size > 1000) {
-      lastNotificationIds = new Set([...lastNotificationIds].slice(-1000));
-    }
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur vérification notifications:`, error.message);
-  }
+        // Ajouter la notification à notificationLog
+        notificationLog.unshift(notification);
+        if (notificationLog.length > 1000) {
+          notificationLog = notificationLog.slice(0, 1000);
+        }
+
+        // Mettre à jour l'onglet Notifications si actif
+        if (document.getElementById("notification-tab")?.classList.contains("active")) {
+          console.log(`[${new Date().toISOString()}] Mise à jour de l'onglet Notifications avec nouvelle notification`);
+          const notificationList = document.getElementById("notification-log-list");
+          if (notificationList) {
+            const card = createNotificationCard(notification);
+            notificationList.insertBefore(card, notificationList.firstChild);
+            filterNotifications();
+          } else {
+            console.error(`[${new Date().toISOString()}] Element notification-log-list introuvable`);
+          }
+        }
+
+        // Afficher la notification pop-up
+        showNotification({
+          user_id: notification.user_id,
+          user_name: notification.user_name,
+          title: notification.title,
+          avatar_url: notification.avatar_url,
+          game_name: "Inconnu",
+          started_at: notification.timestamp,
+          stream_url: notification.platform === 'youtube' ? notification.vidUrl : `https://www.twitch.tv/${notification.user_name.toLowerCase()}`,
+        });
+
+        if (lastNotificationIds.size > 1000) {
+          lastNotificationIds = new Set([...lastNotificationIds].slice(-1000));
+        }
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Erreur lors du traitement de la notification SSE:`, error.message, error);
+      }
+    };
+
+    eventSource.onerror = function(error) {
+      console.error(`[${new Date().toISOString()}] Erreur SSE, reconnexion dans 5 secondes:`, error);
+      eventSource.close();
+      setTimeout(connectSSE, 5000);
+    };
+  };
+
+  connectSSE();
+  return eventSource;
 }
 
 async function showNotification(stream) {
@@ -1076,6 +1122,7 @@ function updateNotificationLog() {
     console.error("Element with ID 'notification-log-list' not found");
     return;
   }
+  console.log(`[${new Date().toISOString()}] Mise à jour de l'onglet Notifications avec ${notificationLog.length} notifications`);
   notificationList.innerHTML = "";
 
   if (notificationLog.length === 0) {
@@ -1231,7 +1278,7 @@ function createYoutubeLiveCard(stream, avatarUrl) {
 function createChannelCard(channel) {
   const settingKey = `${channel.platform}_${channel.id}`;
   const notificationsEnabled = notificationSettings.get(settingKey) || false;
-  console.log(`Création de la carte pour la chaîne ${channel.id} (${channel.platform}), notifications activées: ${notificationsEnabled}`); // Log de débogage
+  //console.log(`Création de la carte pour la chaîne ${channel.id} (${channel.platform}), notifications activées: ${notificationsEnabled}`); // Log de débogage
   const card = document.createElement("a");
   card.className = `channel-card ${channel.platform}-border ${notificationsEnabled ? "notifications-enabled" : ""}`;
   card.href = channel.url;
@@ -1313,19 +1360,19 @@ async function init() {
   } else {
     console.error("Impossible de récupérer l'ID utilisateur pour les notifications");
   }
-  await Promise.all([
+    await Promise.all([
     getFollowedStreams(),
     getFollowedChannels(),
     getYoutubeChannels(),
     getNotificationLogFromServer(),
     getUpcomingVideos(),
-    listenToNotifications(),
   ]);
+  // Initialiser le flux SSE pour les notifications
+  listenToNotifications();
   setInterval(getFollowedStreams, 60000);
   setInterval(getFollowedChannels, 60 * 60 * 1000);
   setInterval(getYoutubeChannels, 60 * 60 * 1000);
   setInterval(getUpcomingVideos, 60000);
-  setInterval(listenToNotifications, 60000);
 }
 
 init();

@@ -165,7 +165,17 @@ async function saveNotificationLog(notification) {
   try {
     const newNotification = new Notification(notification);
     await newNotification.save();
-    console.log(`[${new Date().toISOString()}] Notification enregistrée dans MongoDB:`, { id: notification.id, user_name: notification.user_name });
+    console.log(`[${new Date().toISOString()}] Notification enregistrée dans MongoDB:`, {
+      id: notification.id,
+      user_name: notification.user_name,
+      platform: notification.platform,
+      timestamp: notification.timestamp
+    });
+    notificationEmitter.emit("new-notification", notification);
+    console.log(`[${new Date().toISOString()}] Notification émise via SSE:`, {
+      id: notification.id,
+      user_name: notification.user_name
+    });
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde de la notification dans MongoDB:`, error.message);
   }
@@ -288,16 +298,38 @@ async function syncTwitchLiveStreams() {
     const userIds = followedStreams.data?.map(stream => stream.user_id) || [];
     let profiles = {};
     if (userIds.length > 0) {
-      const userResponse = await axios.get(`https://api.twitch.tv/helix/users?${userIds.map(id => `id=${id}`).join('&')}`, {
-        headers: {
-          "Client-ID": process.env.TWITCH_CLIENT_ID,
-          Authorization: `Bearer ${twitchAccessToken}`,
-        },
-      });
-      profiles = userResponse.data.data.reduce((acc, user) => {
-        acc[user.id] = user.profile_image_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png';
-        return acc;
-      }, {});
+      // Diviser les userIds en lots de 100
+      const batches = [];
+      for (let i = 0; i < userIds.length; i += 100) {
+        batches.push(userIds.slice(i, i + 100));
+      }
+
+      // Effectuer une requête pour chaque lot
+      for (const batch of batches) {
+          try {
+            const userResponse = await axios.get(`https://api.twitch.tv/helix/users?${batch.map(id => `id=${id}`).join('&')}`, {
+              headers: {
+                "Client-ID": process.env.TWITCH_CLIENT_ID,
+                Authorization: `Bearer ${twitchAccessToken}`,
+              },
+            });
+       // Ajouter un délai de 1 seconde entre les lots pour respecter les limites de taux
+       await new Promise(resolve => setTimeout(resolve, 1000));
+          userResponse.data.data.forEach(user => {
+            profiles[user.id] = user.profile_image_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png';
+          });
+        } catch (error) {
+          console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des profils pour le lot:`, batch, error.message);
+          if (error.response) {
+            console.error(`[${new Date().toISOString()}] Détails de l’erreur API:`, error.response.status, error.response.data);
+          }
+          // Attribuer une image par défaut pour les utilisateurs du lot en cas d'erreur
+          batch.forEach(id => {
+            profiles[id] = 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png';
+          });
+        }
+      }
+      console.log(`[${new Date().toISOString()}] Profils récupérés pour ${Object.keys(profiles).length} utilisateurs`);
     }
 
     // Récupérer l'état actuel de liveStreams pour Twitch
