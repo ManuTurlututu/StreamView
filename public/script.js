@@ -22,11 +22,6 @@ let currentUpcomingStreams = [];
 let lastNotificationIds = new Set();
 let lastCheckTimestamp = Date.now();
 
-function truncateTitle(title) {
-  if (!title) return "Aucun titre";
-  return title.length > 85 ? title.substring(0, 85) + "..." : title;
-}
-
 function formatTimestamp(timestamp) {
   const date = new Date(timestamp);
   return date.toLocaleString("fr-FR", {
@@ -849,7 +844,7 @@ function formatStreamDuration(startedAt) {
 }
 
 function createNotificationCard(notification) {
-  const truncatedTitle = truncateTitle(notification.title);
+  const truncatedTitle = truncateText(notification.title, 85);
   const card = document.createElement("a");
   card.className = "notification-card";
   card.href = notification.stream_url || `https://www.twitch.tv/${notification.user_name.toLowerCase()}`;
@@ -1093,7 +1088,7 @@ async function showNotification(stream) {
     }
 
     const notification = new Notification(stream.user_name, {
-      body: `${truncateTitle(stream.title)}\n${stream.game_name || "Inconnu"}`,
+      body: `${truncateText(stream.title, 85)}\n${stream.game_name || "Inconnu"}`,
       icon: stream.avatar_url || "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png",
       tag: `stream-${stream.user_id}`,
     });
@@ -1113,7 +1108,7 @@ async function showNotification(stream) {
         </div>
         <div class="notification-content">
           ${stream.user_name} est en direct !<br>
-          <span class="stream-title">${truncateTitle(stream.title)}</span>
+          <span class="stream-title">${truncateText(stream.title, 85)}</span>
           <span class="notification-close">✕</span>
         </div>
       `;
@@ -1226,18 +1221,14 @@ async function updateChannels(streams, token) {
   startDurationUpdates();
 }
 
-function truncateChannelName(channelName) {
-  return channelName.length > 20 ? `${String(channelName).slice(0, 20)}...` : channelName;
-}
-
-function truncateGameName(GameName) {
-  if (!GameName) return "N/A";
-  return GameName.length > 20 ? GameName.substring(0, 20) + "..." : GameName;
+function truncateText(title, maxLenght) {
+ return title.length > maxLenght ? title.substring(0, maxLenght-2) + "..." : title;
 }
 
 function createTwitchLiveCard(stream, avatarUrl) {
-  const truncatedTitle = truncateTitle(stream.title);
-  const truncatedChannelName = truncateChannelName(stream.user_name);
+  const truncatedTitle = truncateText(stream.title, 85);
+  const truncatedChannelName = truncateText(stream.user_name, 17);
+  const truncatedGameName = truncateText(stream.game_name, 22);
   const card = document.createElement("div");
   card.className = `item-container twitch-border`;
   card.setAttribute('data-user-id', stream.user_id);
@@ -1249,7 +1240,7 @@ function createTwitchLiveCard(stream, avatarUrl) {
       <div class="channel-info">
         <p class="channel-title" title="${stream.user_name}">${truncatedChannelName}</p>
         <p class="viewer-count">${formatViewers(stream.viewer_count)}</p>
-        <p class="game-title" title="${stream.game_name || 'Inconnu'}">${stream.game_name || 'Inconnu'}</p>
+        <p class="game-title" title="${stream.game_name || ''}">${truncatedGameName || ''}</p>
         <p class="stream-duration">Démarré il y a <span class="duration-time" data-started-at="${stream.started_at}"></span></p>
       </div>
     </div>
@@ -1262,7 +1253,8 @@ function createTwitchLiveCard(stream, avatarUrl) {
 }
 
 function createYoutubeLiveCard(stream, avatarUrl) {
-  const truncatedTitle = truncateTitle(stream.title);
+  const truncatedTitle = truncateText(stream.title, 85);
+  const truncatedChannelName = truncateText(stream.user_name, 17);
   const card = document.createElement("div");
   card.className = `item-container youtube-border`;
   card.setAttribute('data-user-id', stream.user_id);
@@ -1272,8 +1264,9 @@ function createYoutubeLiveCard(stream, avatarUrl) {
         <img src="${stream.avatar_url || 'https://yt3.ggpht.com/ytc/default-channel-img.jpg'}" alt="${stream.user_name}" class="channel-img">
       </a>
       <div class="channel-info">
-        <p class="channel-title" title="${stream.user_name}">${stream.user_name}</p>
+        <p class="channel-title" title="${stream.user_name}">${truncatedChannelName}</p>
         <p class="viewer-count">${formatViewers(stream.viewer_count)}</p>
+        <p class="game-title" title="">&nbsp;</p>
         <p class="stream-duration">Démarré il y a <span class="duration-time" data-started-at="${stream.started_at}"></span></p>
       </div>
     </div>

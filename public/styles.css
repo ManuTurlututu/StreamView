@@ -37,7 +37,7 @@ body {
   transition: background-color 0.2s, color 0.2s;
   font-size: 16px;
   border-radius: 4px 4px 0 0;
-  min-width: 50px;
+  min-width: 20px;
 }
 
 .tab:hover {
@@ -55,23 +55,41 @@ body {
   height: 15px;
   vertical-align: middle;
   margin-right: 5px;
-  margin-top: -2px;
 }
 
-.tab img.twitch-icon {
+.tab svg.live-icon {
   width: 24px;
   height: 24px;
+  vertical-align: middle;
+  margin-top: 0px;
+  fill:white
+}
+
+.tab svg.calendar-icon {
+  width: 20px;
+  height: 20px;
+  vertical-align: middle;
+  margin-top: 1px;
+}
+
+.tab svg.channels-icon {
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+}
+
+.tab svg.notification-icon {
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;  
 }
 
 .tab svg.settings-icon {
-  width: 18px;
-  height: 18px;
+  width: 21px;
+  height: 21px;
   vertical-align: middle;
-  fill: #efeff1;
-}
-
-.tab.active svg.settings-icon {
-  fill: #18181b;
+  fill:white;
+  margin-top: 1px;
 }
 
 /* Contenu des onglets */
