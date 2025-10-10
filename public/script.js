@@ -1047,9 +1047,9 @@ function listenToNotifications() {
           user_name: notification.user_name,
           title: notification.title,
           avatar_url: notification.avatar_url,
-          game_name: "Inconnu",
           started_at: notification.timestamp,
           stream_url: notification.platform === 'youtube' ? notification.vidUrl : `https://www.twitch.tv/${notification.user_name.toLowerCase()}`,
+          platform: notification.platform
         });
 
         if (lastNotificationIds.size > 1000) {
@@ -1088,7 +1088,7 @@ async function showNotification(stream) {
     }
 
     const notification = new Notification(stream.user_name, {
-      body: `${truncateText(stream.title, 85)}\n${stream.game_name || "Inconnu"}`,
+      body: `${stream.platform} : ${truncateText(stream.title, 500)}`,
       icon: stream.avatar_url || "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png",
       tag: `stream-${stream.user_id}`,
     });
