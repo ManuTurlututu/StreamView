@@ -1087,8 +1087,8 @@ async function showNotification(stream) {
       }
     }
 
-    const notification = new Notification(stream.user_name, {
-      body: `${stream.platform} : ${truncateText(stream.title, 500)}`,
+    const notification = new Notification(`[${stream.platform.replace(/^\w/, c => c.toUpperCase())}] ${stream.user_name}`, {
+      body: `${stream.title}`,
       icon: stream.avatar_url || "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png",
       tag: `stream-${stream.user_id}`,
     });
