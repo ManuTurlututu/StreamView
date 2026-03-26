@@ -996,8 +996,7 @@ function listenToNotifications() {
 
     eventSource.onopen = function() {
       console.log(`[${new Date().toISOString()}] Connexion SSE établie`);
-      // Recharger les notifications récentes pour s'assurer que rien n'a été manqué
-      getNotificationLogFromServer();
+      getNotificationLogFromServer(); // Recharger depuis le serveur
     };
 
     eventSource.onmessage = function(event) {
@@ -1008,60 +1007,49 @@ function listenToNotifications() {
 
       try {
         const notification = JSON.parse(event.data);
+
         if (!notification.id || lastNotificationIds.has(notification.id)) {
-          console.log(`[${new Date().toISOString()}] Notification ignorée (dupliquée ou invalide):`, notification.id);
+          console.log(`[${new Date().toISOString()}] Notification ignorée (dupliquée):`, notification.id);
           return;
         }
 
-        console.log(`[${new Date().toISOString()}] Nouvelle notification via SSE:`, {
-          id: notification.id,
-          user_name: notification.user_name,
-          title: notification.title,
-          platform: notification.platform,
-          timestamp: notification.timestamp
-        });
+        console.log(`[${new Date().toISOString()}] Nouvelle notification via SSE:`, notification.user_name);
+
         lastNotificationIds.add(notification.id);
 
-        // Ajouter la notification à notificationLog
-        notificationLog.unshift(notification);
-        if (notificationLog.length > 1000) {
-          notificationLog = notificationLog.slice(0, 1000);
-        }
-
-        // Mettre à jour l'onglet Notifications si actif
+        // Mise à jour visuelle immédiate si l'onglet est ouvert
         if (document.getElementById("notification-tab")?.classList.contains("active")) {
-          console.log(`[${new Date().toISOString()}] Mise à jour de l'onglet Notifications avec nouvelle notification`);
           const notificationList = document.getElementById("notification-log-list");
           if (notificationList) {
             const card = createNotificationCard(notification);
             notificationList.insertBefore(card, notificationList.firstChild);
             filterNotifications();
-          } else {
-            console.error(`[${new Date().toISOString()}] Element notification-log-list introuvable`);
           }
         }
 
-        // Afficher la notification pop-up
+        // Appel à la nouvelle fonction (elle gère l'ajout dans notificationLog + notif volante)
         showNotification({
+          id: notification.id,
           user_id: notification.user_id,
           user_name: notification.user_name,
           title: notification.title,
           avatar_url: notification.avatar_url,
-          started_at: notification.timestamp,
-          stream_url: notification.platform === 'youtube' ? notification.vidUrl : `https://www.twitch.tv/${notification.user_name.toLowerCase()}`,
-          platform: notification.platform
+          platform: notification.platform,
+          stream_url: notification.platform === 'youtube' ? notification.vidUrl : `https://www.twitch.tv/${notification.user_name?.toLowerCase()}`,
+          timestamp: notification.timestamp
         });
 
+        // Nettoyage du Set pour éviter la mémoire infinie
         if (lastNotificationIds.size > 1000) {
           lastNotificationIds = new Set([...lastNotificationIds].slice(-1000));
         }
       } catch (error) {
-        console.error(`[${new Date().toISOString()}] Erreur lors du traitement de la notification SSE:`, error.message, error);
+        console.error(`[${new Date().toISOString()}] Erreur traitement notification SSE:`, error.message);
       }
     };
 
     eventSource.onerror = function(error) {
-      console.error(`[${new Date().toISOString()}] Erreur SSE, reconnexion dans 5 secondes:`, error);
+      console.error(`[${new Date().toISOString()}] Erreur SSE, reconnexion dans 5s:`, error);
       eventSource.close();
       setTimeout(connectSSE, 5000);
     };
@@ -1071,54 +1059,111 @@ function listenToNotifications() {
   return eventSource;
 }
 
+// ====================== NOTIFICATIONS ======================
+
+// Fonction principale à appeler partout
 async function showNotification(stream) {
-  console.log(`[${new Date().toISOString()}] Alerte pour:`, stream.user_name);
+    console.log(`[${new Date().toISOString()}] Alerte pour:`, stream.user_name);
 
-  try {
-    const audio = new Audio("/sounds/tsar-bell.mp3");
-    audio.volume = 0.2;
-    audio.play().catch(e => console.error("Erreur son:", e.message));
+    displayNotificationHTML(stream);           // Toujours exécuté
+    await trySendBrowserNotification(stream);  // Notification Windows seulement si autorisé
+}
 
-    if (Notification.permission !== "granted") {
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
-        console.warn("Permission de notification refusée");
-        return;
-      }
+// Affiche la notif volante + ajoute à l'historique
+function displayNotificationHTML(stream) {
+    // 1. Notification volante en haut à droite
+    try {
+        const notificationsContainer = document.getElementById("notifications");
+        if (notificationsContainer) {
+            const htmlNotification = document.createElement("div");
+            htmlNotification.className = "notification";
+
+            htmlNotification.innerHTML = `
+                <div class="avatar">
+                    <img src="${stream.avatar_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png'}" 
+                         alt="${stream.user_name}" 
+                         class="channel-img">
+                </div>
+                <div class="notification-content">
+                    ${stream.user_name} est en direct !<br>
+                    <span class="stream-title">${truncateText(stream.title || '', 85)}</span>
+                    <span class="notification-close">✕</span>
+                </div>
+            `;
+
+            notificationsContainer.appendChild(htmlNotification);
+
+            htmlNotification.querySelector(".notification-close").addEventListener("click", () => htmlNotification.remove());
+
+            setTimeout(() => {
+                if (htmlNotification.parentNode) htmlNotification.remove();
+            }, 5000);
+        }
+    } catch (error) {
+        console.error("Erreur affichage notification HTML :", error.message);
     }
 
-    const notification = new Notification(`[${stream.platform.replace(/^\w/, c => c.toUpperCase())}] ${stream.user_name}`, {
-      body: `${stream.title}`,
-      icon: stream.avatar_url || "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png",
-      tag: `stream-${stream.user_id}`,
-    });
+    // 2. Ajout à l'historique de l'onglet "Notifications"
+    try {
+        if (!notificationLog) notificationLog = [];
 
-    notification.onclick = () => {
-      window.open(stream.stream_url || `https://www.twitch.tv/${stream.user_name.toLowerCase()}`, "_blank");
-      notification.close();
-    };
+        const normalized = {
+            id: stream.id || `notif-${Date.now()}`,
+            user_id: stream.user_id || stream.userId,
+            user_name: stream.user_name,
+            title: stream.title,
+            avatar_url: stream.avatar_url,
+            platform: stream.platform || 'unknown',
+            stream_url: stream.stream_url || (stream.platform === 'youtube' ? stream.vidUrl : null),
+            timestamp: stream.timestamp || Date.now()
+        };
 
-    const notificationsContainer = document.getElementById("notifications");
-    if (notificationsContainer) {
-      const htmlNotification = document.createElement("div");
-      htmlNotification.className = "notification";
-      htmlNotification.innerHTML = `
-        <div class="avatar">
-          <img src="${stream.avatar_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png'}" alt="${stream.user_name}" class="channel-img">
-        </div>
-        <div class="notification-content">
-          ${stream.user_name} est en direct !<br>
-          <span class="stream-title">${truncateText(stream.title, 85)}</span>
-          <span class="notification-close">✕</span>
-        </div>
-      `;
-      notificationsContainer.appendChild(htmlNotification);
-      htmlNotification.querySelector(".notification-close").addEventListener("click", () => htmlNotification.remove());
-      setTimeout(() => htmlNotification.parentNode && htmlNotification.remove(), 5000);
+        notificationLog.unshift(normalized);
+
+        if (notificationLog.length > 1000) {
+            notificationLog = notificationLog.slice(0, 1000);
+        }
+
+        if (document.getElementById("notification-tab")?.classList.contains("active")) {
+            updateNotificationLog();
+        }
+    } catch (error) {
+        console.error("Erreur ajout à notificationLog :", error.message);
     }
-  } catch (error) {
-    console.error("Erreur alerte:", error.message);
-  }
+}
+
+// Notification système (pop-up Windows)
+async function trySendBrowserNotification(stream) {
+    if (Notification.permission === "denied") return;
+
+    if (Notification.permission === "default") {
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+            console.warn("Permission de notification refusée");
+            return;
+        }
+    }
+
+    try {
+        const audio = new Audio("/sounds/tsar-bell.mp3");
+        audio.volume = 0.2;
+        audio.play().catch(() => {});
+
+        const notification = new Notification(`[${stream.platform || 'Live'}] ${stream.user_name}`, {
+            body: stream.title || "Stream en direct",
+            icon: stream.avatar_url || "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png",
+            tag: `stream-${stream.user_id || Date.now()}`,
+        });
+
+        notification.onclick = () => {
+            const url = stream.stream_url || 
+                       (stream.platform === 'youtube' ? stream.vidUrl : `https://www.twitch.tv/${stream.user_name.toLowerCase()}`);
+            window.open(url, "_blank");
+            notification.close();
+        };
+    } catch (error) {
+        console.error("Erreur notification système :", error.message);
+    }
 }
 
 function updateNotificationLog() {
