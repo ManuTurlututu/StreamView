@@ -82,7 +82,7 @@ def validate_access_token(access_token):
         return False
 
 def process_url(channel_data, session, access_token):
-    """Traite une URL de chaîne /streams avec parsing robuste (JSON + fallback regex)"""
+    """Traite une URL de chaîne /streams - Version renforcée pour Live après Upcoming"""
     results = []
     channel_id = channel_data.get('channelId', '')
     if not channel_id:
@@ -93,7 +93,7 @@ def process_url(channel_data, session, access_token):
 
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
             "Authorization": f"Bearer {access_token}",
             "Accept-Language": "en-US,en;q=0.9,fr;q=0.8",
         }
@@ -102,7 +102,6 @@ def process_url(channel_data, session, access_token):
         response.raise_for_status()
         html_content = response.text
 
-        # Détection page de consentement
         if any(x in html_content for x in ["Avant d'accéder à YouTube", "Bevor Sie zu YouTube weitergehen", "Before you continue to YouTube"]):
             log_message(f"Page de consentement détectée pour {url}")
             return results
@@ -110,45 +109,40 @@ def process_url(channel_data, session, access_token):
         channel_name = channel_data.get('title', 'Unknown')
         ch_thumbnail = channel_data.get('thumbnail', '')
 
-        # ====================== 1. ESSAI AVEC ytInitialData (RECOMMANDÉ) ======================
+        # ====================== 1. ytInitialData - Navigation renforcée ======================
         json_match = re.search(r'var ytInitialData\s*=\s*(\{.*?\});\s*</script>', html_content, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1))
-                extracted = extract_from_ytinitialdata(data, url, channel_name, ch_thumbnail)
+                extracted = extract_from_ytinitialdata_improved(data, url, channel_name, ch_thumbnail)
                 if extracted:
                     results.extend(extracted)
                     log_message(f"{len(extracted)} vidéos extraites via ytInitialData pour {channel_name}")
-                    return results  # Si JSON a fonctionné → on sort
+                    return results
             except Exception as e:
-                log_message(f"Erreur parsing ytInitialData pour {channel_name}: {e}")
+                log_message(f"Erreur parsing ytInitialData : {e}")
 
-        # ====================== 2. FALLBACK : Regex (si JSON échoue) ======================
-        log_message(f"ytInitialData non trouvé ou invalide → fallback regex pour {channel_name}")
+        # ====================== 2. FALLBACK REGEX - Version très renforcée ======================
+        log_message(f"ytInitialData échoué → fallback regex renforcé pour {channel_name}")
 
-        # Channel name depuis <title>
         title_match = re.search(r'<title>(.*?)</title>', html_content, re.DOTALL)
         if title_match:
             raw = title_match.group(1).strip()
             channel_name = re.sub(r'\s*-\s*YouTube.*$', '', raw, flags=re.IGNORECASE).strip()
 
         # === UPCOMING ===
-        upcoming_positions = [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]
-        for pos in upcoming_positions:
-            segment = html_content[max(0, pos - 5000):pos + 800]
+        for pos in [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]:
+            segment = html_content[max(0, pos - 5000):pos + 1000]
 
             video_id_match = re.search(r'"videoId":"([A-Za-z0-9_-]{11})"', segment)
             start_time_match = re.search(r'"startTime":"(\d+)"', segment)
             thumbnail_match = re.search(r'"thumbnails":\s*\[\s*{"url":"(https?://[^"]+)"', segment)
 
-            # Titre (plusieurs formats possibles)
             title_match = re.search(
                 r'"title"\s*:\s*(?:{"simpleText":"([^"]+?)"|{"runs":\[{"text":"([^"]+?)"})',
                 segment
             )
-            title = ""
-            if title_match:
-                title = title_match.group(1) or title_match.group(2) or ""
+            title = title_match.group(1) or title_match.group(2) if title_match else ""
 
             if video_id_match and title and start_time_match:
                 results.append({
@@ -163,30 +157,32 @@ def process_url(channel_data, session, access_token):
                     "timestamp": datetime.now().isoformat()
                 })
 
-# === LIVE - Correction importante ===
+        # === LIVE - Version très renforcée ===
         live_positions = [m.start() for m in re.finditer(r'"style":"LIVE"', html_content)]
         for pos in live_positions:
-            # Segment plus ciblé pour éviter de capturer les Upcoming au-dessus
-            segment = html_content[max(0, pos - 7000):pos + 600]
+            # Segment très ciblé : on remonte moins loin pour éviter les Upcoming
+            segment = html_content[max(0, pos - 5500):pos + 800]
 
-            # On prend le DERNIER videoId avant le badge "LIVE" (le plus proche)
+            # On prend le dernier videoId avant le badge LIVE
             video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]{11})"', segment)
             video_id = video_ids[-1] if video_ids else None
 
             if not video_id:
                 continue
 
+            # Titre (regex plus large)
             title_match = re.search(
                 r'"title"\s*:\s*(?:{"simpleText":"([^"]+?)"|{"runs":\[{"text":"([^"]+?)"})',
-                segment
+                segment, re.DOTALL
             )
             title = title_match.group(1) or title_match.group(2) if title_match else ""
 
             thumbnail_match = re.search(r'"thumbnails":\s*\[\s*{"url":"(https?://[^"]+)"', segment)
 
+            # Viewer count - regex plus permissive
             viewer_match = re.search(
-                r'"viewCountText"\s*:\s*\{[^}]*"text"\s*:\s*"([^"]+?)"', 
-                segment
+                r'"viewCountText"\s*:\s*\{.*?"text"\s*:\s*"([^"]+?)"', 
+                segment, re.DOTALL
             )
             viewer_count = 0
             if viewer_match:
@@ -206,7 +202,7 @@ def process_url(channel_data, session, access_token):
                     "viewer_count": viewer_count,
                     "timestamp": datetime.now().isoformat()
                 })
-                
+
         upcoming_count = sum(1 for r in results if r["status"] == "upcoming")
         live_count = sum(1 for r in results if r["status"] == "live")
         log_message(f"{channel_name} → {len(results)} vidéos (upcoming: {upcoming_count}, live: {live_count})")
@@ -221,7 +217,6 @@ def process_url(channel_data, session, access_token):
     except Exception as e:
         log_message(f"Erreur inattendue pour {url}: {str(e)}")
         return results
-
 
 # ====================== FONCTION JSON (la plus fiable) ======================
 def extract_from_ytinitialdata(data, url, channel_name, ch_thumbnail):
