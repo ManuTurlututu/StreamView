@@ -220,36 +220,39 @@ def process_url(channel_data, session, access_token):
 
 # ====================== FONCTION JSON (la plus fiable) ======================
 def extract_from_ytinitialdata(data, url, channel_name, ch_thumbnail):
-    """Extrait les lives et upcoming depuis ytInitialData"""
+    """Extrait les lives et upcoming depuis ytInitialData - Version améliorée"""
     results = []
-
     try:
-        # Navigation dans la structure actuelle (avril 2026)
-        tabs = data.get('contents', {}).get('twoColumnBrowseResultsRenderer', {}).get('tabs', [])
-        for tab in tabs:
-            content = tab.get('tabRenderer', {}).get('content', {})
-            grid = content.get('richGridRenderer', {}).get('contents', [])
-            if grid:
-                break
-        else:
-            return results
+        # Navigation renforcée dans la structure ytInitialData (avril 2026)
+        contents = data.get('contents', {})
+        two_column = contents.get('twoColumnBrowseResultsRenderer', {})
+        tabs = two_column.get('tabs', [])
 
-        for item in grid:
+        grid_contents = None
+        for tab in tabs:
+            tab_content = tab.get('tabRenderer', {}).get('content', {})
+            rich_grid = tab_content.get('richGridRenderer', {})
+            if rich_grid.get('contents'):
+                grid_contents = rich_grid.get('contents', [])
+                break
+
+        if not grid_contents:
+            # Alternative navigation plus large
+            grid_contents = data.get('contents', {}).get('richGridRenderer', {}).get('contents', [])
+
+        for item in grid_contents:
             if 'richItemRenderer' not in item:
                 continue
 
             video = item['richItemRenderer'].get('content', {}).get('videoRenderer')
-            if not video:
+            if not video or not video.get('videoId'):
                 continue
 
             video_id = video.get('videoId')
-            if not video_id:
-                continue
-
             # Titre
-            title_runs = video.get('title', {})
-            title = title_runs.get('simpleText') or (
-                title_runs.get('runs', [{}])[0].get('text') if title_runs.get('runs') else ''
+            title_obj = video.get('title', {})
+            title = title_obj.get('simpleText') or (
+                title_obj.get('runs', [{}])[0].get('text') if title_obj.get('runs') else ''
             )
 
             # Thumbnail
@@ -271,9 +274,17 @@ def extract_from_ytinitialdata(data, url, channel_name, ch_thumbnail):
                         "status": "upcoming",
                         "timestamp": datetime.now().isoformat()
                     })
+                    continue
 
             # === LIVE ===
-            elif any(badge.get('liveBadgeRenderer') for badge in video.get('badges', [])):
+            badges = video.get('badges', [])
+            is_live = any(
+                badge.get('liveBadgeRenderer') or 
+                (isinstance(badge, dict) and badge.get('style') == 'LIVE')
+                for badge in badges
+            )
+
+            if is_live:
                 # Viewer count
                 view_text = video.get('viewCountText', {})
                 viewer_str = view_text.get('simpleText') or (
@@ -293,6 +304,9 @@ def extract_from_ytinitialdata(data, url, channel_name, ch_thumbnail):
                     "viewer_count": viewer_count,
                     "timestamp": datetime.now().isoformat()
                 })
+
+        if results:
+            log_message(f"✅ ytInitialData a extrait {len(results)} vidéo(s) pour {channel_name}")
 
     except Exception as e:
         log_message(f"Erreur dans extract_from_ytinitialdata: {e}")
