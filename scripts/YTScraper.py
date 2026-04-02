@@ -114,7 +114,7 @@ def process_url(channel_data, session, access_token):
         if json_match:
             try:
                 data = json.loads(json_match.group(1))
-                extracted = extract_from_ytinitialdata_improved(data, url, channel_name, ch_thumbnail)
+                extracted = extract_from_ytinitialdata(data, url, channel_name, ch_thumbnail)
                 if extracted:
                     results.extend(extracted)
                     log_message(f"{len(extracted)} vidéos extraites via ytInitialData pour {channel_name}")
