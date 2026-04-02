@@ -163,23 +163,27 @@ def process_url(channel_data, session, access_token):
                     "timestamp": datetime.now().isoformat()
                 })
 
-        # === LIVE ===
+# === LIVE - Correction importante ===
         live_positions = [m.start() for m in re.finditer(r'"style":"LIVE"', html_content)]
         for pos in live_positions:
-            segment = html_content[max(0, pos - 10000):pos + 500]
+            # Segment plus ciblé pour éviter de capturer les Upcoming au-dessus
+            segment = html_content[max(0, pos - 7000):pos + 600]
 
+            # On prend le DERNIER videoId avant le badge "LIVE" (le plus proche)
             video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]{11})"', segment)
             video_id = video_ids[-1] if video_ids else None
+
+            if not video_id:
+                continue
 
             title_match = re.search(
                 r'"title"\s*:\s*(?:{"simpleText":"([^"]+?)"|{"runs":\[{"text":"([^"]+?)"})',
                 segment
             )
-            title = title_match.group(1) or title_match.group(2) or "" if title_match else ""
+            title = title_match.group(1) or title_match.group(2) if title_match else ""
 
             thumbnail_match = re.search(r'"thumbnails":\s*\[\s*{"url":"(https?://[^"]+)"', segment)
 
-            # Viewer count (2 formats courants)
             viewer_match = re.search(
                 r'"viewCountText"\s*:\s*\{[^}]*"text"\s*:\s*"([^"]+?)"', 
                 segment
@@ -202,7 +206,7 @@ def process_url(channel_data, session, access_token):
                     "viewer_count": viewer_count,
                     "timestamp": datetime.now().isoformat()
                 })
-
+                
         upcoming_count = sum(1 for r in results if r["status"] == "upcoming")
         live_count = sum(1 for r in results if r["status"] == "live")
         log_message(f"{channel_name} → {len(results)} vidéos (upcoming: {upcoming_count}, live: {live_count})")
