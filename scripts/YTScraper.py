@@ -35,9 +35,6 @@ except ConnectionFailure as e:
     print(f"Erreur de connexion à MongoDB : {str(e)}")
     sys.exit(1)
 
-# Chemins des fichiers relatifs au script
-base_dir = os.path.dirname(__file__)
-
 # Fonction pour écrire dans le fichier de log
 def log_message(message):
     print(message)
@@ -45,7 +42,6 @@ def log_message(message):
 
 # Fonction pour vérifier la validité du jeton OAuth
 def validate_access_token(access_token):
-    """Vérifie la validité du jeton OAuth en interrogeant l'API YouTube."""
     if not access_token:
         log_message("Erreur : Aucun jeton d'accès fourni")
         return False
@@ -55,12 +51,11 @@ def validate_access_token(access_token):
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         token_info = response.json()
-        
+       
         if 'error' in token_info or 'error_description' in token_info:
             log_message(f"Erreur : Jeton d'accès invalide - {token_info.get('error_description', 'Erreur non spécifiée')}")
-            log_message(f"Détails complets de la réponse : {json.dumps(token_info, indent=2)}")
             return False
-        
+       
         if 'expires_in' in token_info:
             try:
                 expires_in = int(token_info['expires_in'])
@@ -81,8 +76,9 @@ def validate_access_token(access_token):
             log_message(f"Code de statut de la validation : {e.response.status_code}, Réponse : {e.response.text[:500]}")
         return False
 
+
 def process_url(channel_data, session, access_token):
-    """Traite une URL de chaîne /streams - Version renforcée pour Live après Upcoming"""
+    """Traite une URL de chaîne /streams"""
     results = []
     channel_id = channel_data.get('channelId', '')
     if not channel_id:
@@ -102,6 +98,7 @@ def process_url(channel_data, session, access_token):
         response.raise_for_status()
         html_content = response.text
 
+        # Détection page de consentement
         if any(x in html_content for x in ["Avant d'accéder à YouTube", "Bevor Sie zu YouTube weitergehen", "Before you continue to YouTube"]):
             log_message(f"Page de consentement détectée pour {url}")
             return results
@@ -109,12 +106,12 @@ def process_url(channel_data, session, access_token):
         channel_name = channel_data.get('title', 'Unknown')
         ch_thumbnail = channel_data.get('thumbnail', '')
 
-        # ====================== 1. ytInitialData - Navigation renforcée ======================
+        # ====================== 1. ytInitialData ======================
         json_match = re.search(r'var ytInitialData\s*=\s*(\{.*?\});\s*</script>', html_content, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1))
-                extracted = extract_from_ytinitialdata_improved(data, url, channel_name, ch_thumbnail)
+                extracted = extract_from_ytinitialdata(data, url, channel_name, ch_thumbnail)
                 if extracted:
                     results.extend(extracted)
                     log_message(f"{len(extracted)} vidéos extraites via ytInitialData pour {channel_name}")
@@ -122,9 +119,10 @@ def process_url(channel_data, session, access_token):
             except Exception as e:
                 log_message(f"Erreur parsing ytInitialData : {e}")
 
-        # ====================== 2. FALLBACK REGEX - Version très renforcée ======================
+        # ====================== 2. FALLBACK REGEX ======================
         log_message(f"ytInitialData échoué → fallback regex renforcé pour {channel_name}")
 
+        # Channel name depuis <title>
         title_match = re.search(r'<title>(.*?)</title>', html_content, re.DOTALL)
         if title_match:
             raw = title_match.group(1).strip()
@@ -133,11 +131,9 @@ def process_url(channel_data, session, access_token):
         # === UPCOMING ===
         for pos in [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]:
             segment = html_content[max(0, pos - 5000):pos + 1000]
-
             video_id_match = re.search(r'"videoId":"([A-Za-z0-9_-]{11})"', segment)
             start_time_match = re.search(r'"startTime":"(\d+)"', segment)
             thumbnail_match = re.search(r'"thumbnails":\s*\[\s*{"url":"(https?://[^"]+)"', segment)
-
             title_match = re.search(
                 r'"title"\s*:\s*(?:{"simpleText":"([^"]+?)"|{"runs":\[{"text":"([^"]+?)"})',
                 segment
@@ -157,20 +153,15 @@ def process_url(channel_data, session, access_token):
                     "timestamp": datetime.now().isoformat()
                 })
 
-        # === LIVE - Version très renforcée ===
+        # === LIVE - Version renforcée ===
         live_positions = [m.start() for m in re.finditer(r'"style":"LIVE"', html_content)]
         for pos in live_positions:
-            # Segment très ciblé : on remonte moins loin pour éviter les Upcoming
             segment = html_content[max(0, pos - 5500):pos + 800]
-
-            # On prend le dernier videoId avant le badge LIVE
             video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]{11})"', segment)
             video_id = video_ids[-1] if video_ids else None
-
             if not video_id:
                 continue
 
-            # Titre (regex plus large)
             title_match = re.search(
                 r'"title"\s*:\s*(?:{"simpleText":"([^"]+?)"|{"runs":\[{"text":"([^"]+?)"})',
                 segment, re.DOTALL
@@ -179,9 +170,8 @@ def process_url(channel_data, session, access_token):
 
             thumbnail_match = re.search(r'"thumbnails":\s*\[\s*{"url":"(https?://[^"]+)"', segment)
 
-            # Viewer count - regex plus permissive
             viewer_match = re.search(
-                r'"viewCountText"\s*:\s*\{.*?"text"\s*:\s*"([^"]+?)"', 
+                r'"viewCountText"\s*:\s*\{.*?"text"\s*:\s*"([^"]+?)"',
                 segment, re.DOTALL
             )
             viewer_count = 0
@@ -203,8 +193,8 @@ def process_url(channel_data, session, access_token):
                     "timestamp": datetime.now().isoformat()
                 })
 
-        upcoming_count = sum(1 for r in results if r["status"] == "upcoming")
-        live_count = sum(1 for r in results if r["status"] == "live")
+        upcoming_count = sum(1 for r in results if r.get("status") == "upcoming")
+        live_count = sum(1 for r in results if r.get("status") == "live")
         log_message(f"{channel_name} → {len(results)} vidéos (upcoming: {upcoming_count}, live: {live_count})")
 
         return results
@@ -218,33 +208,32 @@ def process_url(channel_data, session, access_token):
         log_message(f"Erreur inattendue pour {url}: {str(e)}")
         return results
 
+
 # ====================== FONCTION JSON (la plus fiable) ======================
 def extract_from_ytinitialdata(data, url, channel_name, ch_thumbnail):
-    """Extrait les lives et upcoming depuis ytInitialData"""
+    """Extrait les lives et upcoming depuis ytInitialData - Correction du elif"""
     results = []
-
     try:
-        # Navigation dans la structure actuelle (avril 2026)
+        # Navigation dans la structure
         tabs = data.get('contents', {}).get('twoColumnBrowseResultsRenderer', {}).get('tabs', [])
+        grid = []
         for tab in tabs:
             content = tab.get('tabRenderer', {}).get('content', {})
             grid = content.get('richGridRenderer', {}).get('contents', [])
             if grid:
                 break
         else:
-            return results
+            # fallback navigation
+            grid = data.get('contents', {}).get('richGridRenderer', {}).get('contents', [])
 
         for item in grid:
             if 'richItemRenderer' not in item:
                 continue
-
             video = item['richItemRenderer'].get('content', {}).get('videoRenderer')
-            if not video:
+            if not video or not video.get('videoId'):
                 continue
 
             video_id = video.get('videoId')
-            if not video_id:
-                continue
 
             # Titre
             title_runs = video.get('title', {})
@@ -271,10 +260,17 @@ def extract_from_ytinitialdata(data, url, channel_name, ch_thumbnail):
                         "status": "upcoming",
                         "timestamp": datetime.now().isoformat()
                     })
+                    continue
 
-            # === LIVE ===
-            elif any(badge.get('liveBadgeRenderer') for badge in video.get('badges', [])):
-                # Viewer count
+            # === LIVE === (Correction importante : plus de "elif")
+            badges = video.get('badges', [])
+            is_live = any(
+                badge.get('liveBadgeRenderer') is not None or
+                (isinstance(badge, dict) and badge.get('style') == 'LIVE')
+                for badge in badges
+            )
+
+            if is_live:
                 view_text = video.get('viewCountText', {})
                 viewer_str = view_text.get('simpleText') or (
                     view_text.get('runs', [{}])[0].get('text') if view_text.get('runs') else ''
@@ -299,6 +295,7 @@ def extract_from_ytinitialdata(data, url, channel_name, ch_thumbnail):
 
     return results
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--access-token', required=True, help='YouTube OAuth access token')
@@ -317,7 +314,10 @@ def main():
         video_results = []
         with requests.Session() as session:
             with ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_channel = {executor.submit(process_url, channel_data, session, access_token): channel_data for channel_data in channels}
+                future_to_channel = {
+                    executor.submit(process_url, channel_data, session, access_token): channel_data 
+                    for channel_data in channels
+                }
                 for future in as_completed(future_to_channel):
                     channel_videos = future.result()
                     video_results.extend(channel_videos)
@@ -329,8 +329,8 @@ def main():
         else:
             log_message("Aucune vidéo à insérer dans 'youtubeVideos'")
 
-        upcoming_total = sum(1 for r in video_results if r["status"] == "upcoming")
-        live_total = sum(1 for r in video_results if r["status"] == "live")
+        upcoming_total = sum(1 for r in video_results if r.get("status") == "upcoming")
+        live_total = sum(1 for r in video_results if r.get("status") == "live")
         log_message(f"Nombre total de vidéos : {len(video_results)} (upcoming: {upcoming_total}, live: {live_total})")
         log_message(f"Temps d'exécution : {time.time() - start_time:.2f} secondes")
 
@@ -340,6 +340,7 @@ def main():
     except Exception as e:
         log_message(f"Erreur générale : {e}")
         sys.exit(1)
+
 
 if __name__ == '__main__':
     main()
