@@ -2,6 +2,7 @@ import sys
 import requests
 import os
 import re
+import json
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
@@ -81,76 +82,80 @@ def validate_access_token(access_token):
         return False
 
 def process_url(channel_data, session, access_token):
-    """Traite une URL, extrait les vidéos avec jeton OAuth."""
+    """Traite une URL de chaîne /streams avec parsing robuste (JSON + fallback regex)"""
     results = []
     channel_id = channel_data.get('channelId', '')
     if not channel_id:
-        log_message(f"channelId manquant pour channel_data : {channel_data}")
+        log_message(f"channelId manquant pour {channel_data}")
         return results
 
-    url = f"https://www.youtube.com/channel/{channel_id}/streams"
+    url = f"https://www.youtube.com/channel/{channel_id}/streams?ucbcb=1"
+
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
             "Authorization": f"Bearer {access_token}",
-            "Cookie": "VISITOR_PRIVACY_METADATA=CgJGUhIhEh0SGwsMDg8QERITFBUWFxgZGhscHR4fICEiIyQlJiA4;__Secure-3PSID=g.a000xwgGsbNiUCStdKDpoe_ea3fTdDxVld8vBg7r7mHTaaq0mmo5IsjTxFyTUDa0XqsdRvHlmwACgYKARcSARISFQHGX2Mibn7h4M1Gg8haSPPOa7xpJxoVAUF8yKo2Z7B12H3WN5-R77woTGGL0076;SIDCC=AKEyXzV3o8svMOHt-cJP4ZC6pn7JLXV0SOd1HrmubesRLse58IapNabl7o4xVjFbKrT-uDLoOw;YSC=dgoCRTFCB54;SID=g.a000xwgGsbNiUCStdKDpoe_ea3fTdDxVld8vBg7r7mHTaaq0mmo5IwHuDII24X6hGy1PdmeC9QACgYKAT0SARISFQHGX2MinPbfadK2C3ypmx-Ut84l2RoVAUF8yKq1YgboRHAVnSVX5wd5QPYI0076;__Secure-1PSIDTS=sidts-CjIB5H03P0eJJJKH-SUoncLiCxtQdOdongqiYwBTHMPTLhuih5U9_-4n9uVl0I5_mDSfExAA;CONSISTENCY=AKreu9vCBR-YqkO81vSGd4oJf8FrBGWhxLDE4ZYSp0Ik4z4sFjBcgVp_0H0UYHpL99oqpXhkKSfGUapPVo19FGQCyL91RnOvWCLXo5W5bZSSCdlt-YjwPCD8Ar1jGf7lz1BKQFpQ-wQwPXpsdIW01C50;SAPISID=EjutoXR4FsxiIDop/Ave-6bzsgN-FCN60_;__Secure-1PSIDCC=AKEyXzXD-k2APvVLn4d5RuF7AgR1yYMaZ67d6wiL_KJxRKnPfI46J-eGu5dkXTgB-J3yh4lgq4o;SSID=ArNNR4oEkwx_U1NZJ;__Secure-1PAPISID=EjutoXR4FsxiIDop/Ave-6bzsgN-FCN60_;__Secure-1PSID=g.a000xwgGsbNiUCStdKDpoe_ea3fTdDxVld8vBg7r7mHTaaq0mmo5c9sAdLBpdUkaLm-7Lpc3DwACgYKAaUSARISFQHGX2MirJXzA7CTlC044C3nXufMORoVAUF8yKqy1OnjFCgPrEdmQtpuOCzj0076;__Secure-3PAPISID=EjutoXR4FsxiIDop/Ave-6bzsgN-FCN60_;__Secure-3PSIDCC=AKEyXzXccFduO_uaWL8EryVkQ--8a7nGDXfWyiYkKiz4ZpC0hsJGQ_HFw7ATKq-qvQ0D2NPlpQ;__Secure-3PSIDTS=sidts-CjIB5H03P0eJJJKH-SUoncLiCxtQdOdongqiYwBTHMPTLhuih5U9_-4n9uVl0I5_mDSfExAA;APISID=ipl4m8Xx09e8a-72/A8DzjniN4QB6GeP0g;HSID=AL11CQac4AvYdV8qb;LOGIN_INFO=AFmmF2swRQIgWksYREhciFxDcVxQuq5gjotEMFxvtEb3f8mAAW4WUTUCIQD5JQNkXKs1YpzNW3uAQrD73rLs0xRmUtvA7kFgF-eapw:QUQ3MjNmeVVoUUF4T285OTVrTzRKTjB3QXhFTmVibi11T2FPNUFXSzBkNkFKM1c0a0JYRVdoNHg0LTRMV3FsLUNkQUpkcEk3ZTR1LTdYX3l6R1BLODZwR29sRnhOR2pReGhpeWdOcDh5dWR0cU1lRWtva0FBelM3V2dVd0k0Uy1sZzIzRUhWVVBTLVlqMmcxTG51Q21YZzA1SEU2LVcxdDlR;PREF=f6=40000000&tz=Europe.Paris&f5=20000&f7=100;SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjUwNjAzLjAzX3AwGgJmciACGgYIgJn-wQY;ST-6m7wh8=session_logininfo=AFmmF2swRQIgF69zvyZH6k_sOM5-x4UbHkQJeBr0CIgfFIFPnIAjZJICIQDSyYBi0df-z_zOprpIGnMmRSOqOIge_U5FkRQoMToZDw%3AQUQ3MjNmd0ROR2xkNU5YTXFkMWtrWU5Wd016SmZsTDNUamVUeUJHWnNTRTA0ZHcxV2IyQ0RZNEp6U0tIbFljdVVVVkNwQy1ORVRDdzNETlQ1QjJPQWgzWXcxR1VCWnlXbFI2MHJUclluTXJmWUQ3YmlwR3BISUp0SURKcElHQ3dtazFtQUFFYzlTb3U4d0U2d1VTbzVkdVhValFWeFBwT2RB;VISITOR_INFO1_LIVE=QEOzas8aboQ;ST-sbra4i=session_logininfo=AFmmF2swRQIgF69zvyZH6k_sOM5-x4UbHkQJeBr0CIgfFIFPnIAjZJICIQDSyYBi0df-z_zOprpIGnMmRSOqOIge_U5FkRQoMToZDw%3AQUQ3MjNmd0ROR2xkNU5YTXFkMWtrWU5Wd016SmZsTDNUamVUeUJHWnNTRTA0ZHcxV2IyQ0RZNEp6U0tIbFljdVVVVkNwQy1ORVRDdzNETlQ1QjJPQWgzWXcxR1VCWnlXbFI2MHJUclluTXJmWUQ3YmlwR3BISUp0SURKcElHQ3dtazFtQUFFYzlTb3U4d0U2d1VTbzVkdVhValFWeFBwT2RB;ST-183jmdn=session_logininfo=AFmmF2swRQIgWksYREhciFxDcVxQuq5gjotEMFxvtEb3f8mAAW4WUTUCIQD5JQNkXKs1YpzNW3uAQrD73rLs0xRmUtvA7kFgF-eapw%3AQUQ3MjNmeVVoUUF4T285OTVrTzRKTjB3QXhFTmVibi11T2FPNUFXSzBkNkFKM1c0a0JYRVdoNHg0LTRMV3FsLUNkQUpkcEk3ZTR1LTdYX3l6R1BLODZwR29sRnhOR2pReGhpeWdOcDh5dWR0cU1lRWtva0FBelM3V2dVd0k0Uy1sZzIzRUhWVVBTLVlqMmcxTG51Q21YZzA1SEU2LVcxdDlR"
+            "Accept-Language": "en-US,en;q=0.9,fr;q=0.8",
         }
+
         response = session.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         html_content = response.text
 
-        if "Avant d'accéder à YouTube" in html_content or "Bevor Sie zu YouTube weitergehen" in html_content:
+        # Détection page de consentement
+        if any(x in html_content for x in ["Avant d'accéder à YouTube", "Bevor Sie zu YouTube weitergehen", "Before you continue to YouTube"]):
             log_message(f"Page de consentement détectée pour {url}")
             return results
 
-        time.sleep(0.5)
-
         channel_name = channel_data.get('title', 'Unknown')
-        title_match = re.search(r'<title>(.*?)</title>', html_content, re.DOTALL)
-        if title_match:
-            raw_title = title_match.group(1).strip()
-            channel_name = re.sub(r'\s*-\s*YouTube\s*$', '', raw_title, flags=re.IGNORECASE)
-
         ch_thumbnail = channel_data.get('thumbnail', '')
 
-        upcoming_matches = [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]
-        channel_handle = channel_id
+        # ====================== 1. ESSAI AVEC ytInitialData (RECOMMANDÉ) ======================
+        json_match = re.search(r'var ytInitialData\s*=\s*(\{.*?\});\s*</script>', html_content, re.DOTALL)
+        if json_match:
+            try:
+                data = json.loads(json_match.group(1))
+                extracted = extract_from_ytinitialdata(data, url, channel_name, ch_thumbnail)
+                if extracted:
+                    results.extend(extracted)
+                    log_message(f"{len(extracted)} vidéos extraites via ytInitialData pour {channel_name}")
+                    return results  # Si JSON a fonctionné → on sort
+            except Exception as e:
+                log_message(f"Erreur parsing ytInitialData pour {channel_name}: {e}")
 
-        for upcoming_pos in upcoming_matches:
-            start_time_match = re.search(r'"startTime":"(\d+)"', html_content[upcoming_pos:upcoming_pos+100])
-            if not start_time_match:
-                log_message(f"startTime non trouvé à la position {upcoming_pos} pour {url}")
-                continue
-            start_time = start_time_match.group(1)
+        # ====================== 2. FALLBACK : Regex (si JSON échoue) ======================
+        log_message(f"ytInitialData non trouvé ou invalide → fallback regex pour {channel_name}")
 
-            title = ''
-            video_thumbnail = ''
-            video_url = ''
-            search_start = max(0, upcoming_pos - 3000)
-            segment_before = html_content[search_start:upcoming_pos]
+        # Channel name depuis <title>
+        title_match = re.search(r'<title>(.*?)</title>', html_content, re.DOTALL)
+        if title_match:
+            raw = title_match.group(1).strip()
+            channel_name = re.sub(r'\s*-\s*YouTube.*$', '', raw, flags=re.IGNORECASE).strip()
 
-            title_search = re.search(r'"title":(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}\]|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})', segment_before, re.DOTALL)
-            if title_search:
-                title = title_search.group(1) or title_search.group(2) or title_search.group(3)
-            else:
-                log_message(f"Titre non trouvé à la position {upcoming_pos} pour {url}")
-                html_filename = f"{channel_handle}_{upcoming_pos}.html"
+        # === UPCOMING ===
+        upcoming_positions = [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]
+        for pos in upcoming_positions:
+            segment = html_content[max(0, pos - 5000):pos + 800]
 
-            thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', segment_before, re.DOTALL)
-            if thumbnail_search:
-                video_thumbnail = thumbnail_search.group(1)
+            video_id_match = re.search(r'"videoId":"([A-Za-z0-9_-]{11})"', segment)
+            start_time_match = re.search(r'"startTime":"(\d+)"', segment)
+            thumbnail_match = re.search(r'"thumbnails":\s*\[\s*{"url":"(https?://[^"]+)"', segment)
 
-            video_id_search = re.search(r'"videoId":"([A-Za-z0-9_-]+)"', segment_before, re.DOTALL)
-            if video_id_search:
-                video_id = video_id_search.group(1)
-                video_url = f"https://www.youtube.com/watch?v={video_id}"
+            # Titre (plusieurs formats possibles)
+            title_match = re.search(
+                r'"title"\s*:\s*(?:{"simpleText":"([^"]+?)"|{"runs":\[{"text":"([^"]+?)"})',
+                segment
+            )
+            title = ""
+            if title_match:
+                title = title_match.group(1) or title_match.group(2) or ""
 
-            if title and video_url and video_thumbnail:
+            if video_id_match and title and start_time_match:
                 results.append({
-                    "vidUrl": video_url,
+                    "vidUrl": f"https://www.youtube.com/watch?v={video_id_match.group(1)}",
                     "vidTitle": title,
-                    "vidThumbnail": video_thumbnail,
-                    "startTime": start_time,
+                    "vidThumbnail": thumbnail_match.group(1) if thumbnail_match else "",
+                    "startTime": start_time_match.group(1),
                     "chUrl": url,
                     "chTitle": channel_name,
                     "chThumbnail": ch_thumbnail,
@@ -158,73 +163,142 @@ def process_url(channel_data, session, access_token):
                     "timestamp": datetime.now().isoformat()
                 })
 
-        live_matches = [m.start() for m in re.finditer(r'"style":"LIVE"', html_content)]
-        for live_pos in live_matches:
-            title = ''
-            video_thumbnail = ''
-            video_url = ''
-            viewer_count = 0  # Valeur par défaut
-            search_start = max(0, live_pos - 10000)
-            search_range = html_content[search_start:live_pos]
+        # === LIVE ===
+        live_positions = [m.start() for m in re.finditer(r'"style":"LIVE"', html_content)]
+        for pos in live_positions:
+            segment = html_content[max(0, pos - 10000):pos + 500]
 
-            title_search = re.search(r'"title":\s*(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}\]|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})', search_range, re.DOTALL)
-            if title_search:
-                title = title_search.group(1) or title_search.group(2) or title_search.group(3)
-                if title:
-                    try:
-                        title = title.encode().decode('utf-8', errors='replace')
-                    except Exception as e:
-                        log_message(f"Erreur d'encodage du titre à la position {live_pos} : {str(e)}")
-                        title = title.encode().decode('unicode_escape', errors='replace')
-            else:
-                log_message(f"Titre live non trouvé à la position {live_pos} pour {url}")
-                html_filename = f"{channel_handle}_live_{live_pos}.html"
+            video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]{11})"', segment)
+            video_id = video_ids[-1] if video_ids else None
 
-            thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', search_range, re.DOTALL)
-            if thumbnail_search:
-                video_thumbnail = thumbnail_search.group(1)
-                video_thumbnail = video_thumbnail.encode().decode('utf-8', errors='replace')
+            title_match = re.search(
+                r'"title"\s*:\s*(?:{"simpleText":"([^"]+?)"|{"runs":\[{"text":"([^"]+?)"})',
+                segment
+            )
+            title = title_match.group(1) or title_match.group(2) or "" if title_match else ""
 
-            # Recherche du dernier videoId avant "style":"LIVE"
-            video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]+)"', search_range)
-            if video_ids:
-                video_id = video_ids[-1]  # Prendre le dernier videoId
-                video_url = f"https://www.youtube.com/watch?v={video_id}"
-                # Vérification contextuelle : confirmer que c'est une vidéo live
-                view_count_search = re.search(r'"viewCountText":\s*{\s*"runs":\s*\[\s*{\s*"text":\s*"([\d\s ,]+)"\s*},\s*{\s*"text":\s*"[^"]*"\s*}\s*\]', search_range, re.DOTALL)
-                if view_count_search:
-                    viewer_count_str = view_count_search.group(1)  # Ex. "11,653"
-                    viewer_count_str = ''.join(filter(str.isdigit, viewer_count_str))  # Supprime tout sauf les chiffres
-                    viewer_count = int(viewer_count_str.replace(',', ''))  # Convertir en 11653
-                else:
-                    log_message(f"viewer_count non trouvé pour {channel_name}")
+            thumbnail_match = re.search(r'"thumbnails":\s*\[\s*{"url":"(https?://[^"]+)"', segment)
 
-            else:
-                log_message(f"videoId non trouvé (live) avant la position {live_pos} dans {search_start}-{live_pos} pour {url}")
-                continue  # Ignorer cette vidéo si aucun videoId n'est trouvé
+            # Viewer count (2 formats courants)
+            viewer_match = re.search(
+                r'"viewCountText"\s*:\s*\{[^}]*"text"\s*:\s*"([^"]+?)"', 
+                segment
+            )
+            viewer_count = 0
+            if viewer_match:
+                num_str = re.sub(r'[^0-9]', '', viewer_match.group(1))
+                viewer_count = int(num_str) if num_str else 0
 
-            results.append({
-                "vidUrl": video_url,
-                "vidTitle": title,
-                "vidThumbnail": video_thumbnail,
-                "startTime": str(int(time.time())),  # Timestamp actuel pour les vidéos live
-                "chUrl": url,
-                "chTitle": channel_name,
-                "chThumbnail": ch_thumbnail,
-                "status": "live",
-                "viewer_count": viewer_count,  # Nouveau champ
-                "timestamp": datetime.now().isoformat()
-            })
+            if video_id and title:
+                results.append({
+                    "vidUrl": f"https://www.youtube.com/watch?v={video_id}",
+                    "vidTitle": title,
+                    "vidThumbnail": thumbnail_match.group(1) if thumbnail_match else "",
+                    "startTime": str(int(time.time())),
+                    "chUrl": url,
+                    "chTitle": channel_name,
+                    "chThumbnail": ch_thumbnail,
+                    "status": "live",
+                    "viewer_count": viewer_count,
+                    "timestamp": datetime.now().isoformat()
+                })
 
         upcoming_count = sum(1 for r in results if r["status"] == "upcoming")
-        live_count = sum(1 for r in results if r["status"] == "live")        
+        live_count = sum(1 for r in results if r["status"] == "live")
+        log_message(f"{channel_name} → {len(results)} vidéos (upcoming: {upcoming_count}, live: {live_count})")
+
         return results
 
     except requests.exceptions.RequestException as e:
-        log_message(f"Erreur lors de la requête pour {url} : {str(e)}")
-        if e.response:
-            log_message(f"Code de statut : {e.response.status_code}, Réponse : {e.response.text[:500]}")
+        log_message(f"Erreur requête pour {url}: {str(e)}")
+        if getattr(e, 'response', None):
+            log_message(f"Status: {e.response.status_code}")
         return results
+    except Exception as e:
+        log_message(f"Erreur inattendue pour {url}: {str(e)}")
+        return results
+
+
+# ====================== FONCTION JSON (la plus fiable) ======================
+def extract_from_ytinitialdata(data, url, channel_name, ch_thumbnail):
+    """Extrait les lives et upcoming depuis ytInitialData"""
+    results = []
+
+    try:
+        # Navigation dans la structure actuelle (avril 2026)
+        tabs = data.get('contents', {}).get('twoColumnBrowseResultsRenderer', {}).get('tabs', [])
+        for tab in tabs:
+            content = tab.get('tabRenderer', {}).get('content', {})
+            grid = content.get('richGridRenderer', {}).get('contents', [])
+            if grid:
+                break
+        else:
+            return results
+
+        for item in grid:
+            if 'richItemRenderer' not in item:
+                continue
+
+            video = item['richItemRenderer'].get('content', {}).get('videoRenderer')
+            if not video:
+                continue
+
+            video_id = video.get('videoId')
+            if not video_id:
+                continue
+
+            # Titre
+            title_runs = video.get('title', {})
+            title = title_runs.get('simpleText') or (
+                title_runs.get('runs', [{}])[0].get('text') if title_runs.get('runs') else ''
+            )
+
+            # Thumbnail
+            thumbnails = video.get('thumbnail', {}).get('thumbnails', [])
+            thumbnail = thumbnails[0].get('url', '') if thumbnails else ''
+
+            # === UPCOMING ===
+            if 'upcomingEventData' in video:
+                start_time = video['upcomingEventData'].get('startTime')
+                if start_time:
+                    results.append({
+                        "vidUrl": f"https://www.youtube.com/watch?v={video_id}",
+                        "vidTitle": title,
+                        "vidThumbnail": thumbnail,
+                        "startTime": start_time,
+                        "chUrl": url,
+                        "chTitle": channel_name,
+                        "chThumbnail": ch_thumbnail,
+                        "status": "upcoming",
+                        "timestamp": datetime.now().isoformat()
+                    })
+
+            # === LIVE ===
+            elif any(badge.get('liveBadgeRenderer') for badge in video.get('badges', [])):
+                # Viewer count
+                view_text = video.get('viewCountText', {})
+                viewer_str = view_text.get('simpleText') or (
+                    view_text.get('runs', [{}])[0].get('text') if view_text.get('runs') else ''
+                )
+                viewer_count = int(re.sub(r'[^0-9]', '', viewer_str)) if viewer_str else 0
+
+                results.append({
+                    "vidUrl": f"https://www.youtube.com/watch?v={video_id}",
+                    "vidTitle": title,
+                    "vidThumbnail": thumbnail,
+                    "startTime": str(int(time.time())),
+                    "chUrl": url,
+                    "chTitle": channel_name,
+                    "chThumbnail": ch_thumbnail,
+                    "status": "live",
+                    "viewer_count": viewer_count,
+                    "timestamp": datetime.now().isoformat()
+                })
+
+    except Exception as e:
+        log_message(f"Erreur dans extract_from_ytinitialdata: {e}")
+
+    return results
 
 def main():
     parser = argparse.ArgumentParser()
