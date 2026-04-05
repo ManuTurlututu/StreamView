@@ -82,7 +82,7 @@ def process_url(channel_data, session, access_token):
         live_count = len(re.findall(r'"style":"LIVE"', html_content))
         log_message(f" 🔍 upcoming: {upcoming_count} | LIVE: {live_count}")
 
-        # ==================== UPCOMING (méthode ancienne ultra-précise) ====================
+        # ==================== UPCOMING ====================
         upcoming_matches = [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]
         for upcoming_pos in upcoming_matches:
             # Recherche du startTime juste après le marqueur (comme dans l'ancien)
@@ -108,6 +108,8 @@ def process_url(channel_data, session, access_token):
             )
             if title_search:
                 title = title_search.group(1) or title_search.group(2) or title_search.group(3)
+                if title:
+                    title = title.replace(r'\u0026', '&')
 
             # Thumbnail
             thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', segment_before, re.DOTALL)
@@ -115,7 +117,9 @@ def process_url(channel_data, session, access_token):
                 video_thumbnail = thumbnail_search.group(1)
 
             # videoId
-            video_id_search = re.search(r'"videoId":"([A-Za-z0-9_-]+)"', segment_before, re.DOTALL)
+            videoId_search_start = max(0, upcoming_pos - 2000)
+            videoId_segment_before = html_content[videoId_search_start:upcoming_pos]            
+            video_id_search = re.search(r'"videoId":"([A-Za-z0-9_-]+)"', videoId_segment_before, re.DOTALL)
             if video_id_search:
                 video_id = video_id_search.group(1)
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -155,6 +159,8 @@ def process_url(channel_data, session, access_token):
             )
             if title_search:
                 title = title_search.group(1) or title_search.group(2) or title_search.group(3)
+                if title:
+                    title = title.replace(r'\u0026', '&')
 
             # Thumbnail
             thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', search_range, re.DOTALL)
