@@ -12,6 +12,7 @@ from pymongo.errors import ConnectionFailure
 import gc
 import psutil
 
+# Forcer l'encodage UTF-8
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 
@@ -39,6 +40,7 @@ def log_message(message):
     sys.stdout.flush()
 
 
+# ====================== SUIVI ======================
 process = psutil.Process(os.getpid())
 max_memory_mb = 0.0
 total_html_size = 0
@@ -63,6 +65,9 @@ def process_url(channel_data, session, access_token):
     global total_html_size
     results = []
     channel_id = channel_data.get('channelId', '')
+    channel_title = channel_data.get('title', 'Unknown')
+    ch_thumbnail = channel_data.get('thumbnail', '')
+
     if not channel_id:
         return results
 
@@ -70,7 +75,7 @@ def process_url(channel_data, session, access_token):
 
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
             "Referer": "https://www.youtube.com/",
@@ -84,30 +89,43 @@ def process_url(channel_data, session, access_token):
         response = session.get(url, headers=headers, cookies=cookies, timeout=25)
         response.raise_for_status()
         html_content = response.text
+
         total_html_size += len(html_content)
 
         if any(x in html_content.lower() for x in ["consent.youtube.com", "avant d'accéder", "before you continue"]):
             return results
 
-        # UPCOMING
-        for upcoming_pos in [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]:
+        # ==================== UPCOMING ====================  (regex d'origine)
+        upcoming_matches = [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]
+        for upcoming_pos in upcoming_matches:
             start_time_match = re.search(r'"startTime":"(\d+)"', html_content[upcoming_pos:upcoming_pos + 1000])
             if not start_time_match:
                 continue
             start_time = start_time_match.group(1)
 
-            segment = html_content[max(0, upcoming_pos - 4000):upcoming_pos + 1000]
+            segment_before = html_content[max(0, upcoming_pos - 5000):upcoming_pos]
+            segment_vid = html_content[max(0, upcoming_pos - 2000):upcoming_pos]
 
-            title_search = re.search(r'"title":(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})', segment, re.DOTALL)
-            title = title_search.group(1) or title_search.group(2) or title_search.group(3) if title_search else ''
-            if title:
-                title = title.replace(r'\u0026', '&')
+            title = ''
+            video_thumbnail = ''
+            video_url = ''
 
-            thumb_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', segment, re.DOTALL)
-            video_thumbnail = thumb_search.group(1) if thumb_search else ''
+            title_search = re.search(
+                r'"title":(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}\]|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})',
+                segment_before, re.DOTALL
+            )
+            if title_search:
+                title = title_search.group(1) or title_search.group(2) or title_search.group(3)
+                if title:
+                    title = title.replace(r'\u0026', '&')
 
-            vid_search = re.search(r'"videoId":"([A-Za-z0-9_-]+)"', segment, re.DOTALL)
-            video_url = f"https://www.youtube.com/watch?v={vid_search.group(1)}" if vid_search else ''
+            thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', segment_before, re.DOTALL)
+            if thumbnail_search:
+                video_thumbnail = thumbnail_search.group(1)
+
+            video_id_search = re.search(r'"videoId":"([A-Za-z0-9_-]+)"', segment_vid, re.DOTALL)
+            if video_id_search:
+                video_url = f"https://www.youtube.com/watch?v={video_id_search.group(1)}"
 
             if title and video_url:
                 results.append({
@@ -117,8 +135,49 @@ def process_url(channel_data, session, access_token):
                     "timestamp": datetime.now().isoformat()
                 })
 
-        # LIVE (similaire, je garde ton code original pour ne pas casser)
-        # ... (je garde ton bloc LIVE tel quel pour l'instant)
+        # ==================== LIVE ====================  (regex d'origine)
+        live_matches = [m.start() for m in re.finditer(r'"style":"LIVE"', html_content)]
+        for live_pos in live_matches:
+            search_range = html_content[max(0, live_pos - 12000):live_pos]
+
+            title = ''
+            video_thumbnail = ''
+            video_url = ''
+            viewer_count = 0
+
+            title_search = re.search(
+                r'"title":\s*(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}\]|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})',
+                search_range, re.DOTALL
+            )
+            if title_search:
+                title = title_search.group(1) or title_search.group(2) or title_search.group(3)
+                if title:
+                    title = title.replace(r'\u0026', '&')
+
+            thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', search_range, re.DOTALL)
+            if thumbnail_search:
+                video_thumbnail = thumbnail_search.group(1)
+
+            video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]+)"', search_range)
+            if video_ids:
+                video_id = video_ids[-1]
+                video_url = f"https://www.youtube.com/watch?v={video_id}"
+
+                view_count_search = re.search(
+                    r'"viewCountText":\s*{\s*"runs":\s*\[\s*{\s*"text":\s*"([\d\s ,]+)"\s*},\s*{\s*"text":\s*"[^"]*"\s*}\s*\]',
+                    search_range, re.DOTALL
+                )
+                if view_count_search:
+                    viewer_count_str = ''.join(filter(str.isdigit, view_count_search.group(1)))
+                    viewer_count = int(viewer_count_str) if viewer_count_str else 0
+
+            if title and video_url:
+                results.append({
+                    "vidUrl": video_url, "vidTitle": title, "vidThumbnail": video_thumbnail,
+                    "startTime": str(int(time.time())), "chUrl": url, "chTitle": channel_title,
+                    "chThumbnail": ch_thumbnail, "status": "live",
+                    "viewer_count": viewer_count, "timestamp": datetime.now().isoformat()
+                })
 
         return results
 
@@ -133,7 +192,7 @@ def validate_access_token(access_token):
         r.raise_for_status()
         data = r.json()
         return int(data.get('expires_in', 0)) > 0
-    except:
+    except Exception:
         return False
 
 
@@ -155,7 +214,9 @@ def main():
 
     start_time = time.time()
 
+    # ====================== STATS PRÉCÉDENTES ======================
     stats = scraper_stats_collection.find_one({"_id": "last_scraper_run"})
+   
     prev_peak_mb = stats.get("peak_memory_mb", 250.0) if stats else 250.0
     prev_workers = stats.get("max_workers_used", 3) if stats else 3
     last_run_timestamp = stats.get("timestamp") if stats else None
@@ -179,9 +240,10 @@ def main():
         max_workers = 2
         log_message(f"⚠️ Plus de 5 min depuis dernière exécution → workers forcés à 2")
     else:
-        max_workers = min(4, prev_workers + 1)      # On reste très conservateur
+        max_workers = min(5, prev_workers + 1)      # max 5
         log_message(f"✅ workers set at : {max_workers}")
 
+    # ====================== SCRAPING ======================
     channels = list(youtube_channels_collection.find({}))
     log_message(f"{len(channels)} YT channels (max_workers = {max_workers})")
 
@@ -194,9 +256,9 @@ def main():
             for future in as_completed(futures):
                 result = future.result()
                 video_results.extend(result)
-                time.sleep(0.05)        # très léger
+                time.sleep(0.07)          # léger délai anti-rate-limit
 
-    # Sauvegarde
+    # ====================== SAUVEGARDE ======================
     if video_results:
         youtube_videos_collection.delete_many({})
         youtube_videos_collection.insert_many(video_results)
@@ -204,7 +266,6 @@ def main():
     execution_time = time.time() - start_time
     final_peak_mb = get_current_peak_mb()
     total_html_mb = total_html_size / (1024 * 1024)
-
     current_timestamp = datetime.now().isoformat()
 
     scraper_stats_collection.update_one(
