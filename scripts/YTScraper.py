@@ -241,10 +241,11 @@ def main():
 
     if minutes_since_last > 8:
         max_workers = 1
-        log_message(f"⚠️ Plus de 8 min depuis dernier run → workers forcés à 2")
+        log_message(f"⚠️ Plus de 8 min depuis dernier run → workers forcés à 1")
     else:
-        max_workers = min(2, prev_workers + 1)
+        max_workers = min(2, prev_workers + 1) # max worker 2 fastest on render
         log_message(f"✅ workers set at : {max_workers}")
+        
 
     # ====================== SCRAPING ======================
     channels = list(youtube_channels_collection.find({}))
