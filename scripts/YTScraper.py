@@ -251,7 +251,7 @@ def main():
             max_workers = max(1, int(prev_workers * scale * 0.8))
             log_message(f"⚠️ Pic précédent trop haut → workers réduits à {max_workers}")
         else:
-            max_workers = min(100, prev_workers + 5)
+            max_workers = min(1, prev_workers + 5)
             log_message(f"✅ Pic précédent OK → workers augmentés à {max_workers}")
 
     # ====================== SCRAPING ======================
