@@ -1237,7 +1237,7 @@ app.get("/logout-api", async (req, res) => {
 const APP_URL = process.env.APP_URL || 'https://your-app-name.onrender.com';
 
 // cron job python
-cron.schedule("*/3 * * * *", async () => {
+cron.schedule("*/5 * * * *", async () => {
   console.log(`[${new Date().toISOString()}] Lancement du script Python planifié...`);
   console.log(`[${new Date().toISOString()}] État des jetons YouTube - accessToken: ${!!youtubeAccessToken}, refreshToken: ${!!youtubeRefreshToken}`);
   if (!youtubeAccessToken && youtubeRefreshToken) {
