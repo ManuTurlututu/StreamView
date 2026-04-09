@@ -2,7 +2,7 @@ import sys
 import requests
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import argparse
@@ -40,7 +40,7 @@ def log_message(message):
     sys.stdout.flush()
 
 
-# ====================== SUIVI ======================
+# ====================== SUIVI MÉMOIRE ======================
 process = psutil.Process(os.getpid())
 max_memory_mb = 0.0
 total_html_size = 0
@@ -89,13 +89,12 @@ def process_url(channel_data, session, access_token):
         response = session.get(url, headers=headers, cookies=cookies, timeout=25)
         response.raise_for_status()
         html_content = response.text
-
         total_html_size += len(html_content)
 
         if any(x in html_content.lower() for x in ["consent.youtube.com", "avant d'accéder", "before you continue"]):
             return results
 
-        # ==================== UPCOMING ====================  (regex d'origine)
+        # ==================== UPCOMING ====================
         upcoming_matches = [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]
         for upcoming_pos in upcoming_matches:
             start_time_match = re.search(r'"startTime":"(\d+)"', html_content[upcoming_pos:upcoming_pos + 1000])
@@ -135,11 +134,10 @@ def process_url(channel_data, session, access_token):
                     "timestamp": datetime.now().isoformat()
                 })
 
-        # ==================== LIVE ====================  (regex d'origine)
+        # ==================== LIVE ====================
         live_matches = [m.start() for m in re.finditer(r'"style":"LIVE"', html_content)]
         for live_pos in live_matches:
             search_range = html_content[max(0, live_pos - 12000):live_pos]
-
             title = ''
             video_thumbnail = ''
             video_url = ''
@@ -214,59 +212,62 @@ def main():
 
     start_time = time.time()
 
-    # ====================== STATS PRÉCÉDENTES ======================
+    # ====================== CHARGEMENT STATS PRÉCÉDENTES ======================
     stats = scraper_stats_collection.find_one({"_id": "last_scraper_run"})
-   
+    
     prev_peak_mb = stats.get("peak_memory_mb", 250.0) if stats else 250.0
     prev_workers = stats.get("max_workers_used", 3) if stats else 3
-    last_run_timestamp = stats.get("timestamp") if stats else None
+    prev_execution_time = stats.get("execution_time_sec", 0) if stats else 0
 
     log_message(f"📈 Last Peak Ram : {prev_peak_mb:.1f} MB | Workers: {prev_workers}")
 
-    # Temps depuis dernière exécution
-    time_since_last_str = "Première exécution"
-    minutes_since_last = 0
-    if last_run_timestamp:
-        try:
-            last_time = datetime.fromisoformat(last_run_timestamp.replace("Z", "+00:00"))
-            delta = datetime.now() - last_time
-            minutes_since_last = delta.total_seconds() / 60
-            time_since_last_str = f"{minutes_since_last:.2f} min"
-        except:
-            pass
-
     # ====================== WORKERS ======================
-    if minutes_since_last > 5:
+    minutes_since_last = 0
+    if stats and stats.get("timestamp"):
+        try:
+            prev_end_str = stats["timestamp"]
+            if prev_end_str.endswith('Z'):
+                prev_end_str = prev_end_str.replace('Z', '+00:00')
+            prev_end_time = datetime.fromisoformat(prev_end_str)
+            if prev_end_time.tzinfo is None:
+                prev_end_time = prev_end_time.replace(tzinfo=timezone.utc)
+            else:
+                prev_end_time = prev_end_time.astimezone(timezone.utc)
+
+            delta = datetime.now(timezone.utc) - prev_end_time
+            minutes_since_last = delta.total_seconds() / 60
+        except:
+            minutes_since_last = 0
+
+    if minutes_since_last > 8:
         max_workers = 2
-        log_message(f"⚠️ Plus de 5 min depuis dernière exécution → workers forcés à 2")
+        log_message(f"⚠️ Plus de 8 min depuis dernier run → workers forcés à 2")
     else:
-        max_workers = min(5, prev_workers + 1)      # max 5
+        max_workers = min(5, prev_workers + 1)
         log_message(f"✅ workers set at : {max_workers}")
 
     # ====================== SCRAPING ======================
     channels = list(youtube_channels_collection.find({}))
-    log_message(f"{len(channels)} YT channels (max_workers = {max_workers})")
+    log_message(f"📡 {len(channels)} YT Channels Loaded (max_workers = {max_workers})")
 
     video_results = []
-
     with requests.Session() as session:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(process_url, ch, session, args.access_token): ch for ch in channels}
-
             for future in as_completed(futures):
                 result = future.result()
                 video_results.extend(result)
-                time.sleep(0.07)          # léger délai anti-rate-limit
+                time.sleep(0.07)
 
-    # ====================== SAUVEGARDE ======================
-    if video_results:
-        youtube_videos_collection.delete_many({})
-        youtube_videos_collection.insert_many(video_results)
-
+    # ====================== SAUVEGARDE & STATS FINALES ======================
     execution_time = time.time() - start_time
     final_peak_mb = get_current_peak_mb()
     total_html_mb = total_html_size / (1024 * 1024)
-    current_timestamp = datetime.now().isoformat()
+    current_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+    if video_results:
+        youtube_videos_collection.delete_many({})
+        youtube_videos_collection.insert_many(video_results)
 
     scraper_stats_collection.update_one(
         {"_id": "last_scraper_run"},
@@ -284,11 +285,38 @@ def main():
     upcoming_total = sum(1 for r in video_results if r.get("status") == "upcoming")
     live_total = sum(1 for r in video_results if r.get("status") == "live")
 
-    log_message(f"✅ {len(video_results)} Saved YT Vids (Upcoming: {upcoming_total} | Live: {live_total})")
-    log_message(f"🔥 Memory used : {final_peak_mb:.1f} MB")
+    # ====================== CALCUL FINAL DU TEMPS ENTRE LES FINS ======================
+    time_between_ends_str = "Première exécution"
+    if stats and stats.get("timestamp"):
+        try:
+            prev_end_str = stats["timestamp"]
+            if prev_end_str.endswith('Z'):
+                prev_end_str = prev_end_str.replace('Z', '+00:00')
+            prev_end_time = datetime.fromisoformat(prev_end_str)
+            if prev_end_time.tzinfo is None:
+                prev_end_time = prev_end_time.replace(tzinfo=timezone.utc)
+            else:
+                prev_end_time = prev_end_time.astimezone(timezone.utc)
+
+            now_utc = datetime.now(timezone.utc)
+            delta = now_utc - prev_end_time
+            seconds_between = delta.total_seconds()
+
+            if seconds_between < 60:
+                time_between_ends_str = f"{int(seconds_between)} sec"
+            elif seconds_between < 3600:
+                time_between_ends_str = f"{seconds_between/60:.1f} min"
+            else:
+                time_between_ends_str = f"{seconds_between/3600:.1f} h"
+        except Exception as e:
+            time_between_ends_str = f"Erreur calcul ({type(e).__name__})"
+
+    # ====================== LOGS FINAUX ======================
+    log_message(f"✅ {len(video_results)} YT Vids Saved (Upcoming: {upcoming_total} | Live: {live_total})")
+    log_message(f"🔥 Peak Ram : {final_peak_mb:.1f} MB")
     log_message(f"📦 Total Download : {total_html_mb:.2f} MB")
-    log_message(f"⏱️ Time : {execution_time:.2f} secondes")
-    log_message(f"⏱️ Last scrap : {time_since_last_str}")
+    log_message(f"⏱️ Scrap Time : {execution_time:.2f} s")
+    log_message(f"⏱️ Last Scrap : {time_between_ends_str} ago")
     log_message(f"📊 Workers : {max_workers}")
     log_message(f"=============== END YT Scrapping ===============")
     log_message("")
