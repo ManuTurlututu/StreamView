@@ -243,7 +243,7 @@ def main():
         max_workers = 1
         log_message(f"⚠️ Plus de 8 min depuis dernier run → workers forcés à 2")
     else:
-        max_workers = min(1, prev_workers + 1)
+        max_workers = min(2, prev_workers + 1)
         log_message(f"✅ workers set at : {max_workers}")
 
     # ====================== SCRAPING ======================
