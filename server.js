@@ -19,7 +19,7 @@ const cors = require('cors');
 const isLocal = process.env.NODE_ENV !== 'production' || process.env.IS_LOCAL === 'true';
 const APP_URL = process.env.APP_URL || (isLocal ? 'https://streamview0.loca.lt' : 'https://your-app.onrender.com');
 
-console.log(`[${new Date().toISOString()}] 🚀 SERVEUR DÉMARRÉ EN MODE → ${isLocal ? 'LOCAL (Vite + loca.lt)' : 'PRODUCTION'}`);
+console.log(`[${new Date().toISOString()}] 🚀 SERVEUR LAUNCH MODE → ${isLocal ? 'LOCAL (Vite + loca.lt)' : 'RENDER (Online)'}`);
 
 // Middleware
 app.use(cors({
@@ -51,7 +51,7 @@ let twitchUserId = null;
 
 // Variables pour cron dynamique
 let currentYoutubeCron = null;
-let lastScrapDurationSeconds = 150;
+let lastScrapDurationSeconds = 600;
 
 // Connexion à MongoDB
 mongoose.connect(process.env.MONGODB_URI)
