@@ -243,13 +243,15 @@ def main():
     SAFE_TARGET_MB = 512.0
 
     if minutes_since_last > 5:
-        max_workers = 10
+        max_workers = 4
         log_message(f"⚠️ Plus de 5 min depuis dernière exécution ({time_since_last_str}) → workers forcés à 1")
     else:
         if (SAFE_TARGET_MB - prev_peak_mb) > (1.25*prev_peak_mb/prev_workers):   
-            max_workers = min(100, max(10,prev_workers + 1))
+            max_workers = min(100, max(4,prev_workers + 1))
+        else:
+            max_workers=prev_workers
         log_message(f"✅ workers set at : {max_workers}")
-
+    
     # ====================== SCRAPING ======================
     channels = list(youtube_channels_collection.find({}))
     log_message(f"{len(channels)} YT channels (max_workers = {max_workers})")
