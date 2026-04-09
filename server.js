@@ -2,7 +2,6 @@ require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 const cookieParser = require("cookie-parser");
-const fs = require("fs").promises;
 const path = require("path");
 const { exec } = require("child_process");
 const cron = require("node-cron");
@@ -11,42 +10,53 @@ const rateLimit = require("express-rate-limit");
 const execPromise = util.promisify(exec);
 const { EventEmitter } = require('events');
 const mongoose = require('mongoose');
-const notificationEmitter = new EventEmitter();
 
+const notificationEmitter = new EventEmitter();
 const app = express();
 const cors = require('cors');
 
+// ==================== DÉTECTION MODE (Local vs Serveur) ====================
+const isLocal = process.env.NODE_ENV !== 'production' || process.env.IS_LOCAL === 'true';
+const APP_URL = process.env.APP_URL || (isLocal ? 'https://streamview0.loca.lt' : 'https://your-app.onrender.com');
+
+console.log(`[${new Date().toISOString()}] 🚀 SERVEUR DÉMARRÉ EN MODE → ${isLocal ? 'LOCAL (Vite + loca.lt)' : 'PRODUCTION'}`);
+
 // Middleware
 app.use(cors({
-  origin: 'https://streamview0.loca.lt', // Remplacez par votre URL loca.lt ou '*' pour autoriser toutes les origines
+  origin: isLocal ? 'https://streamview0.loca.lt' : true,   // true = tout autoriser en prod
   methods: ['GET', 'POST'],
+  credentials: true
 }));
 
+app.use(express.static("public"));
+app.use(cookieParser());
+app.use(express.json());
 
 // Configuration
 const clientId = process.env.TWITCH_CLIENT_ID;
 const clientSecret = process.env.TWITCH_CLIENT_SECRET;
 const redirectUri = process.env.TWITCH_REDIRECT_URI;
-const scope = "user:read:follows";
 
 const youtubeClientId = process.env.YOUTUBE_CLIENT_ID;
 const youtubeClientSecret = process.env.YOUTUBE_CLIENT_SECRET;
 const youtubeRedirectUri = process.env.YOUTUBE_REDIRECT_URI;
 const youtubeScope = "https://www.googleapis.com/auth/youtube.readonly";
 
-const NOTIFICATIONS_FILE = path.join(__dirname, "notifications.json");
-
-// Variables globales pour stocker les jetons
+// Variables globales
 let youtubeAccessToken = null;
 let youtubeRefreshToken = null;
 let twitchAccessToken = null;
 let twitchRefreshToken = null;
 let twitchUserId = null;
 
+// Variables pour cron dynamique
+let currentYoutubeCron = null;
+let lastScrapDurationSeconds = 150;
+
 // Connexion à MongoDB
 mongoose.connect(process.env.MONGODB_URI)
-.then(() => console.log(`[${new Date().toISOString()}] Connecté à MongoDB`))
-.catch(error => console.error(`[${new Date().toISOString()}] Erreur de connexion à MongoDB:`, error.message));
+.then(() => console.log(`[${new Date().toISOString()}]✅ Connecté à MongoDB`))
+.catch(error => console.error(`[${new Date().toISOString()}]❌ Erreur de connexion à MongoDB:`, error.message));
 
 // Schéma pour les paramètres des cloches de notification
 const channelsBellsSchema = new mongoose.Schema({
@@ -142,9 +152,9 @@ async function saveLiveStreams(streams) {
       }
     }));
     await Live.bulkWrite(operations);
-    console.log(`[${new Date().toISOString()}] Streams sauvegardés dans la collection Live: ${streams.length} streams`);
+    console.log(`[${new Date().toISOString()}]🔴 Twitch Live (TW_API) : ${streams.length}`);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde des streams dans Live:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Live Streams Save Error :`, error.message);
   }
 }
 
@@ -155,7 +165,7 @@ async function loadNotificationLog() {
     const notifications = await Notification.find({ timestamp: { $gt: sevenDaysAgo } }).sort({ timestamp: -1 });
     return notifications;
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la lecture des notifications depuis MongoDB:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la lecture des notifications depuis MongoDB:`, error.message);
     return [];
   }
 }
@@ -177,7 +187,7 @@ async function saveNotificationLog(notification) {
       user_name: notification.user_name
     });
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde de la notification dans MongoDB:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la sauvegarde de la notification dans MongoDB:`, error.message);
   }
 }
 
@@ -187,7 +197,7 @@ async function loadYoutubeChannels() {
     const channels = await YoutubeChannel.find({});
     return channels;
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la lecture des chaînes YouTube depuis MongoDB:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la lecture des chaînes YouTube depuis MongoDB:`, error.message);
     return [];
   }
 }
@@ -205,7 +215,7 @@ async function saveYoutubeChannels(channels) {
     await YoutubeChannel.bulkWrite(operations);
     console.log(`[${new Date().toISOString()}] Chaînes YouTube sauvegardées dans MongoDB: ${channels.length} chaînes`);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde des chaînes YouTube dans MongoDB:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la sauvegarde des chaînes YouTube dans MongoDB:`, error.message);
   }
 }
 
@@ -213,8 +223,7 @@ async function saveYoutubeChannels(channels) {
 // Synchroniser les vidéos live YouTube
 async function syncYoutubeLiveVideos() {
   try {
-    const liveVideos = await YoutubeVideo.find({ status: 'live' });
-    console.log(`[${new Date().toISOString()}] ${liveVideos.length} vidéos live YouTube`);
+    const liveVideos = await YoutubeVideo.find({ status: 'live' });    
 
     const existingStreams = await Live.find({ platform: 'youtube' });
     const existingStreamIds = new Set(existingStreams.map(stream => stream.user_id));
@@ -223,9 +232,9 @@ async function syncYoutubeLiveVideos() {
       let startTime;
       try {
         startTime = video.startTime ? new Date(video.startTime).getTime() : Date.now();
-        if (isNaN(startTime)) throw new Error('Invalid startTime');
+        if (isNaN(startTime)) throw new Error('❌ Invalid startTime');
       } catch (e) {
-        console.warn(`[${new Date().toISOString()}] startTime invalide pour ${video.chTitle}: ${video.startTime}, utilisation de Date.now()`);
+        console.warn(`[${new Date().toISOString()}]❌ startTime invalide pour ${video.chTitle}: ${video.startTime}, utilisation de Date.now()`);
         startTime = Date.now();
       }
       return {
@@ -244,7 +253,9 @@ async function syncYoutubeLiveVideos() {
     });
 
     const newStreams = formattedVideos.filter(video => !existingStreamIds.has(video.user_id));
-    console.log(`[${new Date().toISOString()}] Nouveaux streams YouTube:`, newStreams.map(s => s.user_name));
+    if (newStreams.length > 0) {
+      console.log(`[${new Date().toISOString()}] ${newStreams.length}🔴 New YT Live : `, newStreams.map(s => s.user_name));
+    }
 
     for (const video of newStreams) {
       const notification = {
@@ -269,30 +280,30 @@ async function syncYoutubeLiveVideos() {
         }
       }));
       await Live.bulkWrite(operations);
-      console.log(`[${new Date().toISOString()}] ${formattedVideos.length} vidéos YouTube synchronisées`);
+      console.log(`[${new Date().toISOString()}]✅ YT Live Synch : ${liveVideos.length}`);
     }
 
     await Live.deleteMany({ platform: 'youtube', user_id: { $nin: formattedVideos.map(video => video.user_id) } });
-    console.log(`[${new Date().toISOString()}] Vidéos YouTube non live supprimées`);
+    console.log(`[${new Date().toISOString()}]✅ Ended YT Live removed`);
+    
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur YouTube:`, error.message);
+    console.error(`[${new Date().toISOString()}] ❌Erreur YouTube:`, error.message);
   }
 }
 
 async function syncTwitchLiveStreams() {
   try {
     if (!twitchAccessToken || !twitchUserId) {
-      console.log(`[${new Date().toISOString()}] Jeton d'accès ou userId Twitch manquant, tentative de rafraîchissement...`);
+      console.log(`[${new Date().toISOString()}]❌ Twitch Token or userId Twitch missing, Refreshing...`);
       if (!twitchRefreshToken) {
-        throw new Error("Aucun refresh_token Twitch disponible");
+        throw new Error("❌ Twitch Token Missing");
       }
       const { accessToken: newAccessToken } = await refreshAccessToken(twitchRefreshToken);
       twitchAccessToken = newAccessToken;
       await saveTwitchTokens();
     }
 
-    const followedStreams = await getFollowedStreams(twitchAccessToken);
-    console.log(`[${new Date().toISOString()}] Récupéré ${followedStreams.data?.length || 0} streams Twitch en direct`);
+    const followedStreams = await getFollowedStreams(twitchAccessToken);    
 
     // Récupérer les profils des utilisateurs pour obtenir profile_image_url
     const userIds = followedStreams.data?.map(stream => stream.user_id) || [];
@@ -319,17 +330,16 @@ async function syncTwitchLiveStreams() {
             profiles[user.id] = user.profile_image_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png';
           });
         } catch (error) {
-          console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des profils pour le lot:`, batch, error.message);
+          console.error(`[${new Date().toISOString()}] ❌ Twitch profile Load Error batch :`, batch, error.message);
           if (error.response) {
-            console.error(`[${new Date().toISOString()}] Détails de l’erreur API:`, error.response.status, error.response.data);
+            console.error(`[${new Date().toISOString()}] ❌ API Error:`, error.response.status, error.response.data);
           }
           // Attribuer une image par défaut pour les utilisateurs du lot en cas d'erreur
           batch.forEach(id => {
             profiles[id] = 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png';
           });
         }
-      }
-      console.log(`[${new Date().toISOString()}] Profils récupérés pour ${Object.keys(profiles).length} utilisateurs`);
+      }      
     }
 
     // Récupérer l'état actuel de liveStreams pour Twitch
@@ -352,7 +362,9 @@ async function syncTwitchLiveStreams() {
 
     // Détecter les nouveaux streams
     const newStreams = formattedStreams.filter(stream => !existingStreamIds.has(stream.user_id));
-    console.log(`[${new Date().toISOString()}] Nouveaux streams Twitch détectés:`, newStreams.map(s => s.user_name));
+    if (newStreams.length > 0) {
+        console.log(`[${new Date().toISOString()}]🔴 ${newStreams.length} New Twitch Live : `, newStreams.map(s => s.user_name));
+    }
 
     // Enregistrer une notification pour chaque nouveau stream
     for (const stream of newStreams) {
@@ -378,18 +390,18 @@ async function syncTwitchLiveStreams() {
       platform: 'twitch',
       user_id: { $nin: formattedStreams.map(stream => stream.user_id) }
     });
-    console.log(`[${new Date().toISOString()}] Streams Twitch non live supprimés`);
+    console.log(`[${new Date().toISOString()}]✅ Ended TW live Removed`);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la synchronisation:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la synchronisation:`, error.message);
     if (error.response) {
-      console.error(`[${new Date().toISOString()}] Détails de l’erreur API:`, error.response.status, error.response.data);
+      console.error(`[${new Date().toISOString()}]❌ Détails de l’erreur API:`, error.response.status, error.response.data);
     }
   }
 }
 
 async function getFollowedStreams(accessToken, cursor = null, retryCount = 0) {
   if (!twitchUserId) {
-    throw new Error("Aucun ID utilisateur Twitch disponible");
+    throw new Error("❌ Aucun ID utilisateur Twitch disponible");
   }
   const maxRetries = 1; // Limite à une tentative de rafraîchissement
   let allStreams = [];
@@ -410,12 +422,12 @@ async function getFollowedStreams(accessToken, cursor = null, retryCount = 0) {
       allStreams = allStreams.concat(response.data.data || []);
       nextCursor = response.data.pagination?.cursor || null;
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des streams Twitch:`, error.message);
+      console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des streams Twitch:`, error.message);
       if (error.response) {
-        console.error(`[${new Date().toISOString()}] Détails de l’erreur API:`, error.response.status, error.response.data);
+        console.error(`[${new Date().toISOString()}]❌ Détails de l’erreur API:`, error.response.status, error.response.data);
         // Gérer l'erreur 401 (jeton expiré)
         if (error.response.status === 401 && twitchRefreshToken && retryCount < maxRetries) {
-          console.log(`[${new Date().toISOString()}] Erreur 401 détectée, tentative de rafraîchissement du jeton Twitch (tentative ${retryCount + 1}/${maxRetries})`);
+          console.log(`[${new Date().toISOString()}]❌ Erreur 401 détectée, tentative de rafraîchissement du jeton Twitch (tentative ${retryCount + 1}/${maxRetries})`);
           try {
             const { accessToken: newAccessToken, refreshToken: newRefreshToken } = await refreshAccessToken(twitchRefreshToken);
             twitchAccessToken = newAccessToken;
@@ -425,7 +437,7 @@ async function getFollowedStreams(accessToken, cursor = null, retryCount = 0) {
             // Réessayer avec le nouveau jeton
             return await getFollowedStreams(newAccessToken, cursor, retryCount + 1);
           } catch (refreshError) {
-            console.error(`[${new Date().toISOString()}] Échec du rafraîchissement du jeton Twitch:`, refreshError.message);
+            console.error(`[${new Date().toISOString()}]❌ Échec du rafraîchissement du jeton Twitch:`, refreshError.message);
             throw refreshError;
           }
         }
@@ -433,8 +445,7 @@ async function getFollowedStreams(accessToken, cursor = null, retryCount = 0) {
       throw error; // Propager les autres erreurs ou si maxRetries est atteint
     }
   } while (nextCursor);
-
-  console.log(`[${new Date().toISOString()}] Récupéré ${allStreams.length} streams Twitch en direct`);
+  
   return { data: allStreams };
 }
 
@@ -445,12 +456,12 @@ async function loadYoutubeTokens() {
     if (tokenDoc) {
       youtubeAccessToken = tokenDoc.accessToken;
       youtubeRefreshToken = tokenDoc.refreshToken;
-      console.log(`[${new Date().toISOString()}] Jetons YouTube chargés depuis MongoDB: accessToken=${!!youtubeAccessToken}, refreshToken=${!!youtubeRefreshToken}`);
+      console.log(`[${new Date().toISOString()}]📡 YT Token Loaded (MongoDB) (accessToken=${!!youtubeAccessToken}, refreshToken=${!!youtubeRefreshToken})`);
     } else {
-      console.log(`[${new Date().toISOString()}] Aucun jeton YouTube trouvé dans MongoDB`);
+      console.log(`[${new Date().toISOString()}]❌ YT Token Missing `);
     }
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la lecture des jetons YouTube depuis MongoDB:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Token read error (MongoDB) :`, error.message);
   }
 }
 
@@ -467,7 +478,7 @@ async function saveYoutubeTokens() {
     await TokenApi.updateOne({ platform: 'youtube' }, tokenData, { upsert: true });
     console.log(`[${new Date().toISOString()}] Jetons YouTube sauvegardés dans MongoDB`);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde des jetons YouTube dans MongoDB:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la sauvegarde des jetons YouTube dans MongoDB:`, error.message);
   }
 }
 
@@ -479,12 +490,12 @@ async function loadTwitchTokens() {
       twitchAccessToken = tokenDoc.accessToken;
       twitchRefreshToken = tokenDoc.refreshToken;
       twitchUserId = tokenDoc.userId; // Correction : utiliser tokenDoc au lieu de twitchTokens
-      console.log(`[${new Date().toISOString()}] Jetons Twitch chargés depuis MongoDB: accessToken=${!!twitchAccessToken}, refreshToken=${!!twitchRefreshToken}, userId=${!!twitchUserId}`);
+      console.log(`[${new Date().toISOString()}]📡 TW Token Loaded (MongoDB) (accessToken=${!!twitchAccessToken}, refreshToken=${!!twitchRefreshToken}, userId=${!!twitchUserId})`);
     } else {
-      console.log(`[${new Date().toISOString()}] Aucun jeton Twitch trouvé dans MongoDB`);
+      console.log(`[${new Date().toISOString()}]❌ Aucun jeton Twitch trouvé dans MongoDB`);
     }
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la lecture des jetons Twitch depuis MongoDB:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la lecture des jetons Twitch depuis MongoDB:`, error.message);
   }
 }
 
@@ -501,17 +512,17 @@ async function saveTwitchTokens() {
     await TokenApi.updateOne({ platform: 'twitch' }, tokenData, { upsert: true });
     console.log(`[${new Date().toISOString()}] Jetons Twitch sauvegardés dans MongoDB`);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde des jetons Twitch dans MongoDB:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la sauvegarde des jetons Twitch dans MongoDB:`, error.message);
   }
 }
 
 // Vérification des variables d'environnement
 if (!clientId || !clientSecret) {
-  console.error(`[${new Date().toISOString()}] Erreur : TWITCH_CLIENT_ID ou TWITCH_CLIENT_SECRET manquant dans .env`);
+  console.error(`[${new Date().toISOString()}]❌ Erreur : TWITCH_CLIENT_ID ou TWITCH_CLIENT_SECRET manquant dans .env`);
   process.exit(1);
 }
 if (!youtubeClientId || !youtubeClientSecret) {
-  console.error(`[${new Date().toISOString()}] Erreur : YOUTUBE_CLIENT_ID ou YOUTUBE_CLIENT_SECRET manquant dans .env`);
+  console.error(`[${new Date().toISOString()}]❌ Erreur : YOUTUBE_CLIENT_ID ou YOUTUBE_CLIENT_SECRET manquant dans .env`);
   process.exit(1);
 }
 
@@ -524,7 +535,7 @@ app.use(express.json());
 const refreshTokenLimiter = rateLimit({
   windowMs: 5 * 1000,
   max: 1,
-  message: { error: "Trop de requêtes de rafraîchissement, réessayez dans 5 secondes" },
+  message: { error: "❌ Trop de requêtes de rafraîchissement, réessayez dans 5 secondes" },
   keyGenerator: (req) => req.ip,
 });
 app.use("/refresh-token", refreshTokenLimiter);
@@ -536,15 +547,14 @@ let youtubeChannels = [];
 // Charger les paramètres de notification depuis MongoDB
 async function loadNotificationSettings() {
   try {
-    const settings = await ChannelsBells.find({});
-    console.log(`[${new Date().toISOString()}] Paramètres de notification chargés depuis ChannelsBells: ${settings.length} paramètres`);
+    const settings = await ChannelsBells.find({});    
     return settings.map(setting => ({
       userId: setting.userId,
       settingKey: `${setting.platform}_${setting.channelId}`,
       notificationsEnabled: setting.notificationsEnabled
     }));
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la lecture des paramètres de notification depuis ChannelsBells:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la lecture des paramètres de notification depuis ChannelsBells:`, error.message);
     return [];
   }
 }
@@ -559,22 +569,26 @@ async function saveNotificationSettings(settings) {
         upsert: true
       }
     }));
-    await ChannelsBells.bulkWrite(operations);
-    console.log(`[${new Date().toISOString()}] Paramètres de notification sauvegardés dans ChannelsBells: ${settings.length} paramètres`);
+    await ChannelsBells.bulkWrite(operations);    
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la sauvegarde des paramètres de notification dans ChannelsBells:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la sauvegarde des paramètres de notification dans ChannelsBells:`, error.message);
   }
 }
 
 // Charger les paramètres et jetons au démarrage
 (async () => {
+  console.log(`[${new Date().toISOString()}]📡 Chargement initial des données...`);
+
   notificationSettings = await loadNotificationSettings();
-  console.log(`[${new Date().toISOString()}] Paramètres de notification chargés: ${notificationSettings.length} paramètres`);
   youtubeChannels = await loadYoutubeChannels();
-  console.log(`[${new Date().toISOString()}] Chaînes YouTube chargées: ${youtubeChannels.length} chaînes`);
+
   await loadYoutubeTokens();
   await loadTwitchTokens();
-  startYoutubeTokenRefresh(); // Ajouter cette ligne pour lancer le rafraîchissement périodique
+
+  console.log(`[${new Date().toISOString()}]✅ Initialisation terminée | YT Token: ${!!youtubeAccessToken} | TW Token: ${!!twitchAccessToken}`);
+
+  // Lancement du scraper dynamique YouTube
+  scheduleYoutubeScraper();
 })();
 
 // Fonction pour rafraîchir le jeton d'accès Twitch
@@ -595,7 +609,7 @@ async function refreshAccessToken(refreshToken) {
 
     const { access_token, refresh_token, expires_in } = response.data;
     if (!access_token) {
-      throw new Error("Aucun jeton d’accès reçu lors du rafraîchissement");
+      throw new Error("❌ Aucun jeton d’accès reçu lors du rafraîchissement");
     }
 
     return {
@@ -604,14 +618,14 @@ async function refreshAccessToken(refreshToken) {
       expiresIn: expires_in,
     };
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors du rafraîchissement du jeton Twitch:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors du rafraîchissement du jeton Twitch:`, error.message);
     throw error;
   }
 }
 
 // Fonction pour rafraîchir le jeton d'accès YouTube
 async function refreshYoutubeAccessToken(refreshToken) {
-  console.log(`[${new Date().toISOString()}] Tentative de rafraîchissement du jeton YouTube avec refresh_token`);
+  console.log(`[${new Date().toISOString()}]🔄 Tentative de rafraîchissement du jeton YouTube avec refresh_token`);
   try {
     const response = await axios.post(
       "https://oauth2.googleapis.com/token",
@@ -628,7 +642,7 @@ async function refreshYoutubeAccessToken(refreshToken) {
 
     const { access_token, expires_in } = response.data;
     if (!access_token) {
-      throw new Error("Aucun jeton d’accès reçu lors du rafraîchissement");
+      throw new Error("❌ Aucun jeton d’accès reçu lors du rafraîchissement");
     }
 
     youtubeAccessToken = access_token;
@@ -639,26 +653,26 @@ async function refreshYoutubeAccessToken(refreshToken) {
       expiresIn: expires_in,
     };
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors du rafraîchissement du jeton YouTube:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors du rafraîchissement du jeton YouTube:`, error.message);
     if (error.response) {
-      console.error(`[${new Date().toISOString()}] Détails de l’erreur de rafraîchissement:`, error.response.data.error?.message || error.response.data);
+      console.error(`[${new Date().toISOString()}]❌ Détails de l’erreur de rafraîchissement:`, error.response.data.error?.message || error.response.data);
     }
     throw error;
   }
 }
-
+// ============= startYoutubeTokenRefresh() n'est plus utilisé
 async function startYoutubeTokenRefresh() {
   cron.schedule("*/30 * * * *", async () => {
     console.log(`[${new Date().toISOString()}] Début du rafraîchissement périodique du jeton YouTube`);
     if (!youtubeRefreshToken) {
-      console.error(`[${new Date().toISOString()}] Aucun refresh_token YouTube disponible`);
+      console.error(`[${new Date().toISOString()}]❌ Aucun refresh_token YouTube disponible`);
       return;
     }
     try {
       await refreshYoutubeAccessToken(youtubeRefreshToken);
       console.log(`[${new Date().toISOString()}] Jeton YouTube rafraîchi avec succès`);
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Erreur lors du rafraîchissement périodique du jeton YouTube:`, error.response?.data?.error?.message || error.message);
+      console.error(`[${new Date().toISOString()}]❌ Erreur lors du rafraîchissement périodique du jeton YouTube:`, error.response?.data?.error?.message || error.message);
     }
   });
 }
@@ -676,8 +690,8 @@ app.get("/auth/twitch", (req, res) => {
 app.get("/auth/twitch/callback", async (req, res) => {
     const { code } = req.query;
     if (!code) {
-        console.error(`[${new Date().toISOString()}] Aucun code fourni dans /auth/twitch/callback`);
-        return res.status(400).send("Aucun code d'autorisation fourni");
+        console.error(`[${new Date().toISOString()}]❌ Aucun code fourni dans /auth/twitch/callback`);
+        return res.status(400).send("❌Aucun code d'autorisation fourni");
     }
 
     try {
@@ -688,7 +702,7 @@ app.get("/auth/twitch/callback", async (req, res) => {
                 client_secret: process.env.TWITCH_CLIENT_SECRET,
                 code,
                 grant_type: "authorization_code",
-                redirect_uri: `${process.env.APP_URL}/auth/twitch/callback`,
+                redirect_uri: `${APP_URL}/auth/twitch/callback`,
             },
         });
         const { access_token, refresh_token } = tokenResponse.data;
@@ -705,7 +719,7 @@ app.get("/auth/twitch/callback", async (req, res) => {
         console.log(`[${new Date().toISOString()}] ID utilisateur Twitch récupéré: ${userId}`);
 
         if (!userId) {
-            throw new Error("Impossible de récupérer l'ID utilisateur Twitch");
+            throw new Error("❌ Impossible de récupérer l'ID utilisateur Twitch");
         }
 
         // Stocker les jetons et l'ID utilisateur dans MongoDB
@@ -723,11 +737,11 @@ app.get("/auth/twitch/callback", async (req, res) => {
         console.log(`[${new Date().toISOString()}] Authentification Twitch réussie, userId: ${userId}`);
         res.redirect("/");
     } catch (error) {
-        console.error(`[${new Date().toISOString()}] Erreur dans /auth/twitch/callback:`, error.message);
+        console.error(`[${new Date().toISOString()}]❌ Erreur dans /auth/twitch/callback:`, error.message);
         if (error.response) {
             console.error(`[${new Date().toISOString()}] Détails de l'erreur API:`, error.response.status, error.response.data);
         }
-        res.status(500).send("Erreur lors de l'authentification Twitch");
+        res.status(500).send("❌ Erreur lors de l'authentification Twitch");
     }
 });
 
@@ -746,7 +760,7 @@ app.get("/auth/youtube", (req, res) => {
 app.get("/auth/youtube/callback", async (req, res) => {
   const code = req.query.code;
   if (!code) {
-    console.error(`[${new Date().toISOString()}] Aucun code fourni dans /auth/youtube/callback`);
+    console.error(`[${new Date().toISOString()}]❌ Aucun code fourni dans /auth/youtube/callback`);
     return res.status(400).json({ error: "Aucun code fourni" });
   }
 
@@ -782,11 +796,11 @@ app.get("/auth/youtube/callback", async (req, res) => {
     console.log(`[${new Date().toISOString()}] Authentification YouTube réussie, ${subscriptions.length} chaînes récupérées`);
     res.redirect("/index.html");
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de l’échange du jeton YouTube:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de l’échange du jeton YouTube:`, error.message);
     if (error.response) {
-      console.error(`[${new Date().toISOString()}] Détails de l’erreur:`, error.response.status, error.response.data.error?.message || error.response.data);
+      console.error(`[${new Date().toISOString()}]❌ Détails de l’erreur:`, error.response.status, error.response.data.error?.message || error.response.data);
     }
-    res.status(500).json({ error: "Erreur lors de l’authentification YouTube" });
+    res.status(500).json({ error: "❌ Erreur lors de l’authentification YouTube" });
   }
 });
 
@@ -864,68 +878,76 @@ async function getYoutubeSubscriptions(accessToken) {
     console.log(`[${new Date().toISOString()}] Récupéré ${channelDetails.length} chaînes YouTube`);
     return channelDetails;
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des abonnements YouTube:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des abonnements YouTube:`, error.message);
     if (error.response) {
-      console.error(`[${new Date().toISOString()}] Détails de l’erreur API:`, error.response.status, error.response.data.error?.message || error.response.data);
+      console.error(`[${new Date().toISOString()}]❌ Détails de l’erreur API:`, error.response.status, error.response.data.error?.message || error.response.data);
     }
     throw error;
   }
 }
 
 // Fonction pour exécuter le script Python
+// Fonction pour exécuter le script Python
 async function runPythonScript(accessToken, retryCount = 0) {
-  const maxRetries = 1; // Limite à une tentative de rafraîchissement
-  if (!accessToken) {
-    console.error(`[${new Date().toISOString()}] Aucun jeton d'accès YouTube disponible`);
-    return;
-  }
-
-  const scriptPath = path.join(__dirname, "scripts", "YTScraper.py");
-  const command = `python ${scriptPath} --access-token ${accessToken}`;
-
-  try {
-    const { stdout, stderr } = await execPromise(command);
-    console.log(`[${new Date().toISOString()}] Script Python exécuté avec succès: ${stdout}`);
-    if (stderr) {
-      console.error(`[${new Date().toISOString()}] Erreur stderr du script Python: ${stderr}`);
+    const maxRetries = 1;
+    if (!accessToken) {
+        console.error(`[${new Date().toISOString()}]❌ Aucun jeton d'accès YouTube disponible`);
+        return 0;
     }
-  } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de l'exécution du script Python: ${error.message}`);
-    console.error(`[${new Date().toISOString()}] Sortie stdout du script: ${error.stdout || 'Aucune'}`);
-    // Vérifier si l'erreur est liée à un jeton invalide (401 ou 400)
-    const isTokenError = error.message.includes("401") || error.stdout?.includes("400 Client Error");
-    if (isTokenError && youtubeRefreshToken && retryCount < maxRetries) {
-      console.log(`[${new Date().toISOString()}] Erreur ${error.message.includes("401") ? "401" : "400"} détectée dans le script Python, tentative de rafraîchissement du jeton YouTube (tentative ${retryCount + 1}/${maxRetries})`);
-      try {
-        const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(youtubeRefreshToken);
-        youtubeAccessToken = newAccessToken;
-        await saveYoutubeTokens();
-        console.log(`[${new Date().toISOString()}] Jeton YouTube rafraîchi avec succès, nouvelle tentative d'exécution du script Python`);
-        return await runPythonScript(newAccessToken, retryCount + 1);
-      } catch (refreshError) {
-        console.error(`[${new Date().toISOString()}] Échec du rafraîchissement du jeton YouTube: ${refreshError.message}`);
-        if (refreshError.response) {
-          console.error(`[${new Date().toISOString()}] Détails de l’erreur de rafraîchissement: ${refreshError.response.status} ${JSON.stringify(refreshError.response.data)}`);
+
+    const scriptPath = path.join(__dirname, "scripts", "YTScraper.py");
+    const command = `python ${scriptPath} --access-token ${accessToken}`;
+
+    const startTime = Date.now();
+
+    try {
+        const { stdout, stderr } = await execPromise(command);
+        const duration = Math.floor((Date.now() - startTime) / 1000);
+
+        if (stdout) console.log(stdout.trim());
+        if (stderr) console.error(`[${new Date().toISOString()}] stderr Python: ${stderr.trim()}`);
+
+        return duration;
+
+    } catch (error) {
+        const duration = Math.floor((Date.now() - startTime) / 1000);
+        console.error(`[${new Date().toISOString()}]❌ Erreur Python (${duration}s): ${error.message}`);
+
+        if (error.stdout) console.log("STDOUT:", error.stdout.trim());
+        if (error.stderr) console.error("STDERR:", error.stderr.trim());
+
+        const isTokenError = error.message.includes("401") || 
+                           error.stdout?.includes("400 Client Error") || 
+                           error.stdout?.includes("❌ Token invalide");
+
+        if (isTokenError && youtubeRefreshToken && retryCount < maxRetries) {
+            console.log(`[${new Date().toISOString()}]🔄 Token invalide → Rafraîchissement...`);
+            try {
+                const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(youtubeRefreshToken);
+                youtubeAccessToken = newAccessToken;
+                await saveYoutubeTokens();
+                return await runPythonScript(newAccessToken, retryCount + 1);
+            } catch (refreshError) {
+                console.error(`[${new Date().toISOString()}]❌ Échec rafraîchissement:`, refreshError.message);
+                throw refreshError;
+            }
         }
-        throw refreshError;
-      }
+        throw error;
     }
-    throw error; // Propager les autres erreurs ou si maxRetries est atteint
-  }
 }
 
 app.post("/run-python", async (req, res) => {
   console.log(`[${new Date().toISOString()}] Requête /run-python reçue`);
   if (!youtubeAccessToken) {
-    console.error(`[${new Date().toISOString()}] Aucun jeton d’accès YouTube disponible`);
-    return res.status(401).json({ error: "Aucun jeton YouTube disponible, veuillez vous connecter via /auth/youtube" });
+    console.error(`[${new Date().toISOString()}]❌ Aucun jeton d’accès YouTube disponible`);
+    return res.status(401).json({ error: "❌ Aucun jeton YouTube disponible, veuillez vous connecter via /auth/youtube" });
   }
 
   try {
     await runPythonScript(youtubeAccessToken);
     res.json({ success: true });
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur dans /run-python:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur dans /run-python:`, error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -940,8 +962,8 @@ app.get("/get-token", async (req, res) => {
       await saveTwitchTokens();
       console.log(`[${new Date().toISOString()}] Jeton Twitch rafraîchi avec succès dans /get-token`);
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Erreur lors du rafraîchissement dans /get-token:`, error.message);
-      return res.status(401).json({ error: "Jeton Twitch invalide, veuillez vous reconnecter via /auth/twitch" });
+      console.error(`[${new Date().toISOString()}]❌ Erreur lors du rafraîchissement dans /get-token:`, error.message);
+      return res.status(401).json({ error: "❌ Jeton Twitch invalide, veuillez vous reconnecter via /auth/twitch" });
     }
   }
 
@@ -955,8 +977,8 @@ app.get("/get-youtube-token", async (req, res) => {
       const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(youtubeRefreshToken);
       youtubeAccessToken = newAccessToken;
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Erreur lors du rafraîchissement du jeton YouTube dans /get-youtube-token:`, error.message);
-      return res.status(401).json({ error: "Jeton YouTube invalide, veuillez vous reconnecter via /auth/youtube" });
+      console.error(`[${new Date().toISOString()}]❌ Erreur lors du rafraîchissement du jeton YouTube dans /get-youtube-token:`, error.message);
+      return res.status(401).json({ error: "❌ Jeton YouTube invalide, veuillez vous reconnecter via /auth/youtube" });
     }
   }
 
@@ -969,8 +991,8 @@ app.get("/refresh-token", async (req, res) => {
   console.log(`[${new Date().toISOString()}] Requête /refresh-token reçue de l'IP: ${clientIp}`);
 
   if (!twitchRefreshToken) {
-    console.error(`[${new Date().toISOString()}] Aucun refresh_token disponible dans /refresh-token, IP: ${clientIp}`);
-    return res.status(401).json({ error: "Aucun refresh_token Twitch disponible, veuillez vous connecter via /auth/twitch" });
+    console.error(`[${new Date().toISOString()}]❌ Aucun refresh_token disponible dans /refresh-token, IP: ${clientIp}`);
+    return res.status(401).json({ error: "❌ Aucun refresh_token Twitch disponible, veuillez vous connecter via /auth/twitch" });
   }
 
   try {
@@ -979,11 +1001,11 @@ app.get("/refresh-token", async (req, res) => {
     twitchRefreshToken = newRefreshToken;
     await saveTwitchTokens();
 
-    console.log(`[${new Date().toISOString()}] Jeton Twitch rafraîchi avec succès dans /refresh-token, IP: ${clientIp}, expires_in: ${expiresIn}`);
+    console.log(`[${new Date().toISOString()}]❌ Jeton Twitch rafraîchi avec succès dans /refresh-token, IP: ${clientIp}, expires_in: ${expiresIn}`);
     res.json({ access_token: accessToken });
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors du rafraîchissement du jeton dans /refresh-token, IP: ${clientIp}:`, error.message);
-    res.status(401).json({ error: "Jeton Twitch invalide, veuillez vous reconnecter via /auth/twitch" });
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors du rafraîchissement du jeton dans /refresh-token, IP: ${clientIp}:`, error.message);
+    res.status(401).json({ error: "❌ Jeton Twitch invalide, veuillez vous reconnecter via /auth/twitch" });
   }
 });
 
@@ -999,8 +1021,8 @@ app.get('/get-recent-notifications', async (req, res) => {
     console.log(`[${new Date().toISOString()}] Récupéré ${notifications.length} notifications récentes`);
     res.json(notifications);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des notifications:`, error.message);
-    res.status(500).json({ error: 'Erreur serveur lors de la récupération des notifications' });
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des notifications:`, error.message);
+    res.status(500).json({ error: '❌ Erreur serveur lors de la récupération des notifications' });
   }
 });
 
@@ -1009,22 +1031,22 @@ app.get("/get-youtube-channels", async (req, res) => {
   console.log(`[${new Date().toISOString()}] Requête /get-youtube-channels - Access token: ${youtubeAccessToken ? "Présent" : "Absent"}, Refresh token: ${youtubeRefreshToken ? "Présent" : "Absent"}`);
 
   if (!youtubeAccessToken && !youtubeRefreshToken) {
-    console.warn(`[${new Date().toISOString()}] Aucun jeton d’accès ou refresh token disponible, renvoi d’une liste vide`);
-    return res.status(401).json({ error: "Aucun jeton YouTube disponible, veuillez vous connecter via /auth/youtube" });
+    console.warn(`[${new Date().toISOString()}]❌ Aucun jeton d’accès ou refresh token disponible, renvoi d’une liste vide`);
+    return res.status(401).json({ error: "❌ Aucun jeton YouTube disponible, veuillez vous connecter via /auth/youtube" });
   }
 
   if (!youtubeAccessToken && youtubeRefreshToken) {
-    console.log(`[${new Date().toISOString()}] Jeton d’accès absent, tentative de rafraîchissement avec le refresh token`);
+    console.log(`[${new Date().toISOString()}]❌ Jeton d’accès absent, tentative de rafraîchissement avec le refresh token`);
     try {
       const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(youtubeRefreshToken);
       youtubeAccessToken = newAccessToken;
       console.log(`[${new Date().toISOString()}] Jeton d’accès YouTube rafraîchi avec succès`);
     } catch (error) {
-      console.error(`[${new Date().toISOString()}] Erreur lors du rafraîchissement du jeton YouTube dans /get-youtube-channels:`, error.message);
+      console.error(`[${new Date().toISOString()}]❌ Erreur lors du rafraîchissement du jeton YouTube dans /get-youtube-channels:`, error.message);
       if (error.response) {
-        console.error(`[${new Date().toISOString()}] Détails de l’erreur de rafraîchissement:`, error.response.data.error?.message || error.response.data);
+        console.error(`[${new Date().toISOString()}]❌ Détails de l’erreur de rafraîchissement:`, error.response.data.error?.message || error.response.data);
       }
-      return res.status(401).json({ error: "Jeton YouTube invalide, veuillez vous reconnecter via /auth/youtube" });
+      return res.status(401).json({ error: "❌ Jeton YouTube invalide, veuillez vous reconnecter via /auth/youtube" });
     }
   }
 
@@ -1035,11 +1057,11 @@ app.get("/get-youtube-channels", async (req, res) => {
     console.log(`[${new Date().toISOString()}] Chaînes YouTube mises à jour avec succès: ${subscriptions.length} chaînes`);
     res.json(youtubeChannels);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des chaînes YouTube:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des chaînes YouTube:`, error.message);
     if (error.response) {
-      console.error(`[${new Date().toISOString()}] Détails de l’erreur API:`, error.response.status, error.response.data.error?.message || error.response.data);
+      console.error(`[${new Date().toISOString()}]❌ Détails de l’erreur API:`, error.response.status, error.response.data.error?.message || error.response.data);
       if (error.response.status === 401 && youtubeRefreshToken) {
-        console.log(`[${new Date().toISOString()}] Erreur 401 détectée, nouvelle tentative de rafraîchissement`);
+        console.log(`[${new Date().toISOString()}]❌ Erreur 401 détectée, nouvelle tentative de rafraîchissement`);
         try {
           const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(youtubeRefreshToken);
           youtubeAccessToken = newAccessToken;
@@ -1049,8 +1071,8 @@ app.get("/get-youtube-channels", async (req, res) => {
           console.log(`[${new Date().toISOString()}] Chaînes YouTube récupérées après rafraîchissement: ${subscriptions.length} chaînes`);
           return res.json(youtubeChannels);
         } catch (refreshError) {
-          console.error(`[${new Date().toISOString()}] Échec du rafraîchissement après erreur 401:`, refreshError.message);
-          return res.status(401).json({ error: "Jeton YouTube invalide, veuillez vous reconnecter via /auth/youtube" });
+          console.error(`[${new Date().toISOString()}]❌ Échec du rafraîchissement après erreur 401:`, refreshError.message);
+          return res.status(401).json({ error: "❌ Jeton YouTube invalide, veuillez vous reconnecter via /auth/youtube" });
         }
       }
     }
@@ -1078,8 +1100,8 @@ app.get("/get-notifications", async (req, res) => {
     console.log(`[${new Date().toISOString()}] Paramètres de notification renvoyés: ${formattedSettings.length} paramètres`);
     res.json(formattedSettings);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des paramètres de notification:`, error.message);
-    res.status(500).json({ error: "Erreur serveur lors de la récupération des notifications" });
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des paramètres de notification:`, error.message);
+    res.status(500).json({ error: "❌ Erreur serveur lors de la récupération des notifications" });
   }
 });
 
@@ -1090,8 +1112,8 @@ app.post("/set-notification", async (req, res) => {
   console.log(`[${new Date().toISOString()}] Requête reçue pour /set-notification:`, { userId, platform, channelId, notificationsEnabled });
 
   if (!userId || !platform || !channelId || typeof notificationsEnabled !== "boolean") {
-    console.error(`[${new Date().toISOString()}] Paramètres invalides:`, { userId, platform, channelId, notificationsEnabled });
-    return res.status(400).json({ error: "Paramètres manquants ou invalides" });
+    console.error(`[${new Date().toISOString()}]❌ Paramètres invalides:`, { userId, platform, channelId, notificationsEnabled });
+    return res.status(400).json({ error: "❌ Paramètres manquants ou invalides" });
   }
 
   try {
@@ -1103,8 +1125,8 @@ app.post("/set-notification", async (req, res) => {
     console.log(`[${new Date().toISOString()}] Paramètres de notification mis à jour dans ChannelsBells:`, { userId, platform, channelId, notificationsEnabled });
     res.json({ success: true });
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la mise à jour des paramètres de notification:`, error.message);
-    res.status(500).json({ error: "Erreur serveur lors de la mise à jour des notifications" });
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la mise à jour des paramètres de notification:`, error.message);
+    res.status(500).json({ error: "❌ Erreur serveur lors de la mise à jour des notifications" });
   }
 });
 
@@ -1119,7 +1141,7 @@ app.post("/save-notification-log", async (req, res) => {
     !notification.avatar_url ||
     !notification.timestamp
   ) {
-    console.error(`[${new Date().toISOString()}] Données de notification invalides:`, {
+    console.error(`[${new Date().toISOString()}]❌ Données de notification invalides:`, {
       receivedKeys: Object.keys(notification),
       missingKeys: [
         !notification.id && "id",
@@ -1130,7 +1152,7 @@ app.post("/save-notification-log", async (req, res) => {
         !notification.timestamp && "timestamp",
       ].filter(Boolean),
     });
-    return res.status(400).json({ error: "Données de notification invalides" });
+    return res.status(400).json({ error: "❌ Données de notification invalides" });
   }
 
   try {
@@ -1139,8 +1161,8 @@ app.post("/save-notification-log", async (req, res) => {
     console.log(`[${new Date().toISOString()}] Notification émise:`, notification); // Log ajouté
     res.json({ success: true });
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de l’enregistrement de la notification:`, error.message);
-    res.status(500).json({ error: "Erreur serveur lors de l’enregistrement de la notification" });
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de l’enregistrement de la notification:`, error.message);
+    res.status(500).json({ error: "❌ Erreur serveur lors de l’enregistrement de la notification" });
   }
 });
 
@@ -1151,8 +1173,8 @@ app.get("/get-notification-log", async (req, res) => {
     console.log(`[${new Date().toISOString()}] Journal des notifications affiché : ${notificationLog.length}`);
     res.json(notificationLog);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération du journal des notifications:`, error.message);
-    res.status(500).json({ error: "Erreur serveur lors de la récupération du journal des notifications" });
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération du journal des notifications:`, error.message);
+    res.status(500).json({ error: "❌ Erreur serveur lors de la récupération du journal des notifications" });
   }
 });
 
@@ -1191,8 +1213,8 @@ app.get("/", (req, res) => {
 
 // Gestion des erreurs globales
 app.use((err, req, res, next) => {
-  console.error(`[${new Date().toISOString()}] Erreur de serveur:`, err.message);
-  res.status(500).json({ error: "Erreur serveur interne" });
+  console.error(`[${new Date().toISOString()}]❌ Erreur de serveur:`, err.message);
+  res.status(500).json({ error: "❌ Erreur serveur interne" });
 });
 
 app.get("/get-youtube-videos", async (req, res) => {
@@ -1204,8 +1226,8 @@ app.get("/get-youtube-videos", async (req, res) => {
     console.log(`[${new Date().toISOString()}] Vidéos récupérées: ${videos.length} (upcoming + live)`);
     res.json(videos);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des vidéos:`, error.message);
-    res.status(500).json({ error: "Erreur serveur lors de la récupération des vidéos" });
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des vidéos:`, error.message);
+    res.status(500).json({ error: "❌ Erreur serveur lors de la récupération des vidéos" });
   }
 });
 
@@ -1216,8 +1238,8 @@ app.get("/get-live-streams", async (req, res) => {
     console.log(`[${new Date().toISOString()}] Streams récupérés: ${streams.length}`);
     res.json(streams);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de la récupération des streams:`, error.message);
-    res.status(500).json({ error: "Erreur serveur lors de la récupération des streams" });
+    console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des streams:`, error.message);
+    res.status(500).json({ error: "❌ Erreur serveur lors de la récupération des streams" });
   }
 });
 
@@ -1233,58 +1255,76 @@ app.get("/logout-api", async (req, res) => {
   res.redirect("/");
 });
 
-// URL de votre application Render
-const APP_URL = process.env.APP_URL || 'https://your-app-name.onrender.com';
+// ====================== CRONS (UNIFIÉS) ======================
 
-// cron job python
-cron.schedule("*/5 * * * *", async () => {
-  console.log(`[${new Date().toISOString()}] Lancement du script Python planifié...`);
-  console.log(`[${new Date().toISOString()}] État des jetons YouTube - accessToken: ${!!youtubeAccessToken}, refreshToken: ${!!youtubeRefreshToken}`);
-  if (!youtubeAccessToken && youtubeRefreshToken) {
-    console.log(`[${new Date().toISOString()}] Jeton d'accès manquant, tentative de rafraîchissement...`);
-    try {
-      const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(youtubeRefreshToken);
-      youtubeAccessToken = newAccessToken;
-      console.log(`[${new Date().toISOString()}] Jeton d'accès YouTube rafraîchi avec succès`);
-    } catch (error) {
-      console.error(`[${new Date().toISOString()}] Échec du rafraîchissement du jeton YouTube: ${error.message}`);
-      if (error.response) {
-        console.error(`[${new Date().toISOString()}] Détails de l’erreur de rafraîchissement: ${error.response.status} ${JSON.stringify(error.response.data)}`);
-      }
-      return;
+// Cron Dynamique YouTube
+function scheduleYoutubeScraper() {
+    if (currentYoutubeCron) {
+        currentYoutubeCron.stop();
     }
-  }
-  if (youtubeAccessToken) {
-    await runPythonScript(youtubeAccessToken);
-  } else {
-    console.error(`[${new Date().toISOString()}] Impossible d'exécuter le script: aucun jeton disponible`);
-  }
-});
 
-// cron job syncYoutubeLiveVideos
+    const scrapMinutes = Math.ceil(lastScrapDurationSeconds / 60);
+    let intervalMinutes = Math.max(3, Math.min(12, scrapMinutes + 1));    
+
+    console.log(`[${new Date().toISOString()}]⏱️ YT Scraper planifié toutes les ${intervalMinutes} minutes (dernière durée: ${lastScrapDurationSeconds}s)`);
+
+    currentYoutubeCron = cron.schedule(`*/${intervalMinutes} * * * *`, async () => {
+        console.log(`\n[${new Date().toISOString()}]🚀 Lancement YT Scraper (dynamique)`);
+
+        if (!youtubeAccessToken && youtubeRefreshToken) {
+            console.log(`[${new Date().toISOString()}] Rafraîchissement du jeton YouTube...`);
+            try {
+                const { accessToken: newAccessToken } = await refreshYoutubeAccessToken(youtubeRefreshToken);
+                youtubeAccessToken = newAccessToken;
+            } catch (error) {
+                console.error(`[${new Date().toISOString()}]❌ Échec rafraîchissement jeton:`, error.message);
+                return;
+            }
+        }
+
+        if (!youtubeAccessToken) {
+            console.error(`[${new Date().toISOString()}]❌ Aucun jeton YouTube disponible`);
+            return;
+        }
+
+        try {
+            const startScrap = Date.now();
+            const duration = await runPythonScript(youtubeAccessToken);
+
+            lastScrapDurationSeconds = duration > 0 ? duration : Math.floor((Date.now() - startScrap) / 1000);
+
+            // Re-planifier avec la nouvelle durée
+            scheduleYoutubeScraper();
+        } catch (error) {
+            console.error(`[${new Date().toISOString()}]❌ Erreur critique scraper:`, error.message);
+        }
+    });
+}
+
+// Synchronisation Live Twitch + YouTube toutes les minutes
 cron.schedule('*/1 * * * *', async () => {
-  console.log(`[${new Date().toISOString()}] Début de la synchronisation des vidéos live YouTube...`);
-  await syncYoutubeLiveVideos();
+  console.log(`[${new Date().toISOString()}]🔄 Synchro Live Twitch + YouTube...`);
+  await Promise.all([
+    syncTwitchLiveStreams().catch(err => console.error("TW Sync Error:", err.message)),
+    syncYoutubeLiveVideos().catch(err => console.error("YT Sync Error:", err.message))
+  ]);
 });
 
-// Cron job Twitch
-cron.schedule("*/1 * * * *", async () => {
-  console.log(`[${new Date().toISOString()}] Début de la synchronisation des streams Twitch...`);
-  await syncTwitchLiveStreams();
-});
-
-// cron job autoping pour eviter le spindown
+// Auto-ping pour éviter le spindown (Render, Railway, etc.)
 cron.schedule('*/10 * * * *', async () => {
   try {
     const response = await axios.get(APP_URL);
-    console.log(`[${new Date().toISOString()}] Auto-ping réussi: Statut ${response.status}`);
+    console.log(`[${new Date().toISOString()}]✅ Auto-ping OK → ${response.status}`);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Erreur lors de l'auto-ping:`, error.message);
+    console.error(`[${new Date().toISOString()}]❌ Auto-ping échoué:`, error.message);
   }
 });
+
+// Lancement initial du cron dynamique YouTube
+scheduleYoutubeScraper();
 
 // Démarrer le serveur
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`[${new Date().toISOString()}] Serveur en écoute sur le port ${port}`);
+  console.log(`[${new Date().toISOString()}]✅ Server listening (port ${port})`);
 });
