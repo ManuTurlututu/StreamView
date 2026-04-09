@@ -218,7 +218,7 @@ def main():
 
     # ====================== STATS PRÉCÉDENTES ======================
     stats = scraper_stats_collection.find_one({"_id": "last_scraper_run"})
-    
+   
     prev_peak_mb = stats.get("peak_memory_mb", 250.0) if stats else 250.0
     prev_workers = stats.get("max_workers_used", 1) if stats else 1
     last_run_timestamp = stats.get("timestamp") if stats else None
@@ -228,7 +228,6 @@ def main():
     # ====================== TEMPS DEPUIS DERNIÈRE FIN ======================
     time_since_last_str = "Première exécution"
     minutes_since_last = 0
-
     if last_run_timestamp:
         try:
             last_time = datetime.fromisoformat(last_run_timestamp.replace("Z", "+00:00"))
@@ -240,18 +239,20 @@ def main():
             time_since_last_str = "Erreur calcul"
 
     # ====================== DÉCISION WORKERS ======================
-    SAFE_TARGET_MB = 512.0
+    SAFE_TARGET_MB = 410.0
 
     if minutes_since_last > 5:
-        max_workers = 4
+        max_workers = 1
         log_message(f"⚠️ Plus de 5 min depuis dernière exécution ({time_since_last_str}) → workers forcés à 1")
     else:
-        if (SAFE_TARGET_MB - prev_peak_mb) > (1.25*prev_peak_mb/prev_workers):   
-            max_workers = min(100, max(4,prev_workers + 1))
+        if prev_peak_mb > SAFE_TARGET_MB:
+            scale = SAFE_TARGET_MB / prev_peak_mb
+            max_workers = max(1, int(prev_workers * scale * 0.8))
+            log_message(f"⚠️ Pic précédent trop haut → workers réduits à {max_workers}")
         else:
-            max_workers=prev_workers
-        log_message(f"✅ workers set at : {max_workers}")
-    
+            max_workers = min(5, prev_workers + 1)   # Limité à 5 maximum
+            log_message(f"✅ workers set at : {max_workers}")
+
     # ====================== SCRAPING ======================
     channels = list(youtube_channels_collection.find({}))
     log_message(f"{len(channels)} YT channels (max_workers = {max_workers})")
@@ -265,7 +266,8 @@ def main():
             for future in as_completed(futures):
                 result = future.result()
                 video_results.extend(result)
-                gc.collect()
+                # Pas de gc.collect() ici → on laisse Python gérer
+                time.sleep(0.08)          # ← Valeur optimisée pour la vitesse
 
     # ====================== SAUVEGARDE ======================
     if video_results:
@@ -277,7 +279,7 @@ def main():
     total_html_mb = total_html_size / (1024 * 1024)
     current_timestamp = datetime.now().isoformat()
 
-    # Mise à jour stats (uniquement si on arrive jusqu'ici)
+    # Mise à jour stats
     scraper_stats_collection.update_one(
         {"_id": "last_scraper_run"},
         {"$set": {
@@ -305,7 +307,7 @@ def main():
     log_message("")
 
     del video_results
-    gc.collect()
+    gc.collect()   # Un seul gc.collect() à la toute fin
 
 
 if __name__ == '__main__':
