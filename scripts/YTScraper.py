@@ -223,7 +223,7 @@ def main():
     prev_workers = stats.get("max_workers_used", 1) if stats else 1
     last_run_timestamp = stats.get("timestamp") if stats else None
 
-    log_message(f"📈 Stats précédent → Pic: {prev_peak_mb:.1f} MB | Workers: {prev_workers}")
+    log_message(f"📈 Last Peak Ram : {prev_peak_mb:.1f} MB | Workers: {prev_workers}")
 
     # ====================== TEMPS DEPUIS DERNIÈRE FIN ======================
     time_since_last_str = "Première exécution"
@@ -240,23 +240,18 @@ def main():
             time_since_last_str = "Erreur calcul"
 
     # ====================== DÉCISION WORKERS ======================
-    SAFE_TARGET_MB = 410.0
+    SAFE_TARGET_MB = 512.0
 
     if minutes_since_last > 5:
         max_workers = 1
         log_message(f"⚠️ Plus de 5 min depuis dernière exécution ({time_since_last_str}) → workers forcés à 1")
     else:
-        if prev_peak_mb > SAFE_TARGET_MB:
-            scale = SAFE_TARGET_MB / prev_peak_mb
-            max_workers = max(1, int(prev_workers * scale * 0.8))
-            log_message(f"⚠️ Pic précédent trop haut → workers réduits à {max_workers}")
-        else:
-            max_workers = min(1, prev_workers + 5)
-            log_message(f"✅ Pic précédent OK → workers augmentés à {max_workers}")
+        max_workers = min(10, int(SAFE_TARGET_MB/prev_peak_mb * prev_workers) - 1)
+        log_message(f"✅ workers set at : {max_workers}")
 
     # ====================== SCRAPING ======================
     channels = list(youtube_channels_collection.find({}))
-    log_message(f"{len(channels)} chaînes YT chargées (max_workers = {max_workers})")
+    log_message(f"{len(channels)} YT channels (max_workers = {max_workers})")
 
     video_results = []
 
@@ -297,7 +292,7 @@ def main():
     upcoming_total = sum(1 for r in video_results if r.get("status") == "upcoming")
     live_total = sum(1 for r in video_results if r.get("status") == "live")
 
-    log_message(f"✅ {len(video_results)} vidéos YT sauvegardées (Upcoming: {upcoming_total} | Live: {live_total})")
+    log_message(f"✅ {len(video_results)} Saved YT Vids (Upcoming: {upcoming_total} | Live: {live_total})")
     log_message(f"🔥 Memory used : {final_peak_mb:.1f} MB")
     log_message(f"📦 Total Download : {total_html_mb:.2f} MB")
     log_message(f"⏱️ Time : {execution_time:.2f} secondes")
