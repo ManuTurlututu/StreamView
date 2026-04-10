@@ -18,8 +18,16 @@ const cors = require('cors');
 // ==================== DÉTECTION MODE (Local vs Serveur) ====================
 const isLocal = process.env.NODE_ENV !== 'production' || process.env.IS_LOCAL === 'true';
 const APP_URL = process.env.APP_URL || (isLocal ? 'https://streamview0.loca.lt' : 'https://your-app.onrender.com');
+console.log(`[${new Date().toISOString()}] ================ 🚀 SERVEUR LAUNCH ================`);
+console.log(`[${new Date().toISOString()}] 🚀 SERVEUR LAUNCH → ${isLocal ? 'LOCAL (Vite + loca.lt)' : 'RENDER (Online)'}`);
 
-console.log(`[${new Date().toISOString()}] 🚀 SERVEUR LAUNCH MODE → ${isLocal ? 'LOCAL (Vite + loca.lt)' : 'RENDER (Online)'}`);
+// ==================== CONFIGURATION SCRAPER SELON MODE ====================
+let lastScrapDurationSeconds = isLocal 
+  ? 40          // Local → scrape rapide pour le dev
+  : 600;        // Production (Render) → toutes les 10 minutes
+
+console.log(`[${new Date().toISOString()}] ⏱️ Initial Scrap Duration : ${lastScrapDurationSeconds}s → ${isLocal ? 'LOCAL (Vite + loca.lt)' : 'RENDER (Online)'}`);
+console.log(`[${new Date().toISOString()}] ================ 🚀 SERVEUR LAUNCH ================\n`);
 
 // Middleware
 app.use(cors({
@@ -51,7 +59,6 @@ let twitchUserId = null;
 
 // Variables pour cron dynamique
 let currentYoutubeCron = null;
-let lastScrapDurationSeconds = 600;
 
 // Connexion à MongoDB
 mongoose.connect(process.env.MONGODB_URI)
@@ -219,7 +226,6 @@ async function saveYoutubeChannels(channels) {
   }
 }
 
-// Fonction pour synchroniser les vidéos live YouTube avec liveStreams
 // Synchroniser les vidéos live YouTube
 async function syncYoutubeLiveVideos() {
   try {
@@ -228,35 +234,62 @@ async function syncYoutubeLiveVideos() {
     const existingStreams = await Live.find({ platform: 'youtube' });
     const existingStreamIds = new Set(existingStreams.map(stream => stream.user_id));
 
+    // ====================== AJUSTEMENT SELON INTERVALLE CRON ======================
+    // Tu peux changer cette valeur facilement ici
+    const scraperIntervalMinutes = 10;                    // ← Change ici selon ton cron (ex: 8, 10, 12...)
+    const adjustmentMs = (scraperIntervalMinutes / 2) * 60 * 1000;   // moitié de l'intervalle en ms
+
     const formattedVideos = liveVideos.map(video => {
-      let startTime;
-      try {
-        startTime = video.startTime ? new Date(video.startTime).getTime() : Date.now();
-        if (isNaN(startTime)) throw new Error('❌ Invalid startTime');
-      } catch (e) {
-        console.warn(`[${new Date().toISOString()}]❌ startTime invalide pour ${video.chTitle}: ${video.startTime}, utilisation de Date.now()`);
-        startTime = Date.now();
+      let started_at;
+
+      if (video.startTime) {
+        const ts = Number(video.startTime);
+
+        if (!isNaN(ts)) {
+          if (ts > 1000000000 && ts < 2000000000) {        // timestamp en secondes
+            let detectedTime = ts * 1000;                   // conversion en millisecondes
+
+            // Ajustement : on enlève la moitié de l'intervalle du scraper
+            started_at = detectedTime - adjustmentMs;
+
+            // Sécurité : ne pas aller dans le futur ou trop loin dans le passé
+            if (started_at > Date.now()) {
+              started_at = Date.now() - (5 * 60 * 1000);    // max 5 min dans le passé
+            }
+          } else if (ts > 1000000000000) {
+            started_at = ts - adjustmentMs;
+          } else {
+            started_at = Date.now();
+          }
+        } else {
+          started_at = Date.now();
+        }
+      } else {
+        started_at = Date.now();
       }
+
       return {
         platform: 'youtube',
-        user_id: video.chUrl.split('/channel/')[1] || 'unknown',
+        user_id: video.chUrl.split('/channel/')[1] || video.chTitle || 'unknown',
         user_name: video.chTitle || 'Inconnu',
         title: video.vidTitle || 'Aucun titre',
         thumbnail_url: video.vidThumbnail || 'https://i.ytimg.com/img/no_thumbnail.jpg',
         avatar_url: video.chThumbnail || 'https://yt3.ggpht.com/ytc/default-channel-img.jpg',
-        viewer_count: video.viewer_count,
-        started_at: startTime, // Conversion explicite en timestamp
+        viewer_count: video.viewer_count || 0,
+        started_at: started_at,
         game_name: 'Inconnu',
         stream_url: video.vidUrl,
         timestamp: Date.now()
       };
     });
 
+    // Détecter les nouveaux streams
     const newStreams = formattedVideos.filter(video => !existingStreamIds.has(video.user_id));
     if (newStreams.length > 0) {
       console.log(`[${new Date().toISOString()}] ${newStreams.length}🔴 New YT Live : `, newStreams.map(s => s.user_name));
     }
 
+    // Notifications pour nouveaux lives
     for (const video of newStreams) {
       const notification = {
         id: `youtube-${video.user_id}-${Date.now()}`,
@@ -271,6 +304,7 @@ async function syncYoutubeLiveVideos() {
       await saveNotificationLog(notification);
     }
 
+    // Sauvegarde dans liveStreams
     if (formattedVideos.length > 0) {
       const operations = formattedVideos.map(video => ({
         updateOne: {
@@ -280,14 +314,18 @@ async function syncYoutubeLiveVideos() {
         }
       }));
       await Live.bulkWrite(operations);
-      console.log(`[${new Date().toISOString()}]✅ YT Live Synch : ${liveVideos.length}`);
+      console.log(`[${new Date().toISOString()}]✅ YT Live Synch : ${liveVideos.length} lives`);
     }
 
-    await Live.deleteMany({ platform: 'youtube', user_id: { $nin: formattedVideos.map(video => video.user_id) } });
+    // Nettoyage des lives terminés
+    await Live.deleteMany({ 
+      platform: 'youtube', 
+      user_id: { $nin: formattedVideos.map(video => video.user_id) } 
+    });
     console.log(`[${new Date().toISOString()}]✅ Ended YT Live removed`);
-    
+
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] ❌Erreur YouTube:`, error.message);
+    console.error(`[${new Date().toISOString()}] ❌ Erreur sync YouTube Live:`, error.message);
   }
 }
 
