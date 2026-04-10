@@ -70,151 +70,129 @@ function updateLogoutButtonVisibility() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Tab switching
+  // ==================== TAB SWITCHING ====================
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
       document.querySelector(".tab.active")?.classList.remove("active");
       document.querySelector(".tab-content.active")?.classList.remove("active");
+
       tab.classList.add("active");
       const tabContent = document.getElementById(tab.dataset.tab);
-      if (!tabContent) {
-        console.error(`Tab content for ${tab.dataset.tab} not found`);
-        return;
-      }
+      if (!tabContent) return;
+
       tabContent.classList.add("active");
+
+      // Gestion spécifique par onglet
       if (tab.dataset.tab === "live") {
         startDurationUpdates();
-        filterStreams();
-      } else if (tab.dataset.tab === "channels") {
+        filterStreams();                    // applique recherche + tri actuel
+      } 
+      else if (tab.dataset.tab === "channels") {
         stopDurationUpdates();
-        displayChannels();
-      } else if (tab.dataset.tab === "notification-tab") {
+        displayChannels();                  // recharge avec le tri actuel
+      } 
+      else if (tab.dataset.tab === "notification-tab") {
         stopDurationUpdates();
-        console.log(`[${new Date().toISOString()}] Onglet Notifications activé, mise à jour en cours`);
-        getNotificationLogFromServer(); // Recharger les notifications pour s'assurer qu'elles sont à jour
+        getNotificationLogFromServer();
         updateNotificationLog();
         filterNotifications();
-      } else if (tab.dataset.tab === "settings") {
+      } 
+      else if (tab.dataset.tab === "settings") {
         stopDurationUpdates();
         updateLogoutButtonVisibility();
-      } else if (tab.dataset.tab === "upcoming") {
+      } 
+      else if (tab.dataset.tab === "upcoming") {
         stopDurationUpdates();
-        filterUpcomingStreams(searchUpcomingQuery);
+        if (currentUpcomingStreams.length === 0) {
+          getUpcomingVideos();
+        } else {
+          filterUpcomingStreams(searchUpcomingQuery);
+        }
       }
     });
   });
 
-  // Live tab: Sort and search
+  // ==================== TRIS & RECHERCHES ====================
+
+  // === LIVE TAB ===
   const sortSelector = document.getElementById("sort-selector");
   if (sortSelector) {
     sortSelector.addEventListener("change", (event) => {
-      console.log("Sort selector changed to:", event.target.value);
       sortMode = event.target.value;
-      if (currentStreams.length > 0) {
-        const sortedStreams = sortStreams([...currentStreams], sortMode);
-        const channelsList = document.getElementById("channels-list");
-        if (channelsList) {
-          reorderChannels(channelsList, sortedStreams, "user_id", (stream) =>
-            createTwitchLiveCard(
-              stream,
-              avatarCache.get(stream.user_id) ||
-                "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png"
-            )
-          );
-          currentStreams = sortedStreams;
-          filterStreams();
-        } else {
-          console.error("Element with ID 'channels-list' not found");
-        }
-      } else {
-        console.log("Aucun stream à trier");
+      const channelsList = document.getElementById("channels-list");
+      if (channelsList && currentStreams.length > 0) {
+        const sorted = sortStreams([...currentStreams], sortMode);
+        reorderChannels(channelsList, sorted, "user_id", (stream) => 
+          stream.platform === "twitch" 
+            ? createTwitchLiveCard(stream, stream.avatar_url)
+            : createYoutubeLiveCard(stream, stream.avatar_url)
+        );
+        currentStreams = sorted;
       }
+      filterStreams();
     });
-  } else {
-    console.error("Element with ID 'sort-selector' not found");
   }
 
   const searchLiveInput = document.getElementById("search-live");
   if (searchLiveInput) {
-    searchLiveInput.addEventListener("input", (event) => {
-      searchLiveQuery = event.target.value;
+    searchLiveInput.addEventListener("input", (e) => {
+      searchLiveQuery = e.target.value;
       filterStreams();
     });
-  } else {
-    console.error("Element with ID 'search-live' not found");
   }
 
-  // Upcoming tab: Sort and search
+  // === UPCOMING TAB ===
   const sortUpcomingSelector = document.getElementById("sort-upcoming-selector");
   if (sortUpcomingSelector) {
     sortUpcomingSelector.addEventListener("change", (event) => {
-      console.log("Sort upcoming selector changed to:", event.target.value);
       sortUpcomingMode = event.target.value;
-      if (currentUpcomingStreams.length > 0) {
-        const sortedStreams = sortUpcomingStreams([...currentUpcomingStreams], sortUpcomingMode);
-        const channelsList = document.getElementById("upcoming-channels-list");
-        if (channelsList) {
-          reorderChannels(channelsList, sortedStreams, "vidUrl", (stream) => createUpcomingCard(stream));
-          currentUpcomingStreams = sortedStreams;
-          filterUpcomingStreams(searchUpcomingQuery);
-        } else {
-          console.error("Element with ID 'upcoming-channels-list' not found");
-        }
-      } else {
-        console.log("Aucun stream à venir à trier");
+      const list = document.getElementById("upcoming-channels-list");
+      if (list && currentUpcomingStreams.length > 0) {
+        const sorted = sortUpcomingStreams([...currentUpcomingStreams], sortUpcomingMode);
+        reorderChannels(list, sorted, "vidUrl", createUpcomingCard);
+        currentUpcomingStreams = sorted;
       }
+      filterUpcomingStreams(searchUpcomingQuery);
     });
-  } else {
-    console.error("Element with ID 'sort-upcoming-selector' not found");
   }
 
   const searchUpcomingInput = document.getElementById("search-upcoming");
   if (searchUpcomingInput) {
-    searchUpcomingInput.addEventListener("input", (event) => {
-      searchUpcomingQuery = event.target.value;
+    searchUpcomingInput.addEventListener("input", (e) => {
+      searchUpcomingQuery = e.target.value;
       filterUpcomingStreams(searchUpcomingQuery);
     });
-  } else {
-    console.error("Element with ID 'search-upcoming' not found");
   }
 
-  // Channels tab: Sort and search
+  // === CHANNELS TAB ===
   const sortChannelsSelector = document.getElementById("sort-channels-selector");
   if (sortChannelsSelector) {
     sortChannelsSelector.addEventListener("change", (event) => {
-      console.log("Sort channels selector changed to:", event.target.value);
       sortChannelsMode = event.target.value;
       displayChannels();
     });
-  } else {
-    console.error("Element with ID 'sort-channels-selector' not found");
   }
 
   const searchChannelsInput = document.getElementById("search-channels");
   if (searchChannelsInput) {
-    searchChannelsInput.addEventListener("input", (event) => {
-      searchChannelsQuery = event.target.value;
+    searchChannelsInput.addEventListener("input", (e) => {
+      searchChannelsQuery = e.target.value;
       filterChannels();
     });
-  } else {
-    console.error("Element with ID 'search-channels' not found");
   }
 
-  // Notifications tab: Search
+  // === NOTIFICATIONS TAB ===
   const searchNotificationsInput = document.getElementById("search-notifications");
   if (searchNotificationsInput) {
-    searchNotificationsInput.addEventListener("input", (event) => {
-      searchNotificationsQuery = event.target.value;
+    searchNotificationsInput.addEventListener("input", (e) => {
+      searchNotificationsQuery = e.target.value;
       filterNotifications();
     });
-  } else {
-    console.error("Element with ID 'search-notifications' not found");
   }
 
-  // Visibility change for duration updates
+  // Visibility change (durée des streams)
   document.addEventListener("visibilitychange", () => {
-    const liveTab = document.getElementById("live");
-    if (document.visibilityState === "visible" && liveTab?.classList.contains("active")) {
+    if (document.visibilityState === "visible" && document.getElementById("live")?.classList.contains("active")) {
       startDurationUpdates();
     } else {
       stopDurationUpdates();
@@ -669,38 +647,30 @@ async function updateUpcomingStreams() {
 
 async function getUpcomingVideos() {
   const token = await getYoutubeAccessToken();
-  const channelsList = document.getElementById("upcoming-channels-list");
-  if (!channelsList) {
-    console.error("Element with ID 'upcoming-channels-list' not found");
-    return;
-  }
   if (!token) {
-    console.log("Aucun jeton YouTube, affichage du message d'erreur");
-    channelsList.innerHTML = "";
+    console.log("Aucun jeton YouTube disponible");
     updateLogoutButtonVisibility();
     return;
   }
 
   try {
-    console.log("Récupération des vidéos YouTube via /get-youtube-videos");
+    console.log(`[${new Date().toISOString()}] 🔄 Requête /get-youtube-videos (Upcoming)`);
+    
     const response = await fetch("/get-youtube-videos");
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Échec de /get-youtube-videos:", errorData);
-      throw new Error(errorData.error || "Échec de la récupération des vidéos à venir");
-    }
+    if (!response.ok) throw new Error("Fetch failed");
+
     const videos = await response.json();
-    console.log("Vidéos YouTube récupérées:", videos.length, "vidéos");
-    //console.log("Exemple de vidéo:", videos[0] || "Aucune vidéo");
-    console.log("Statuts uniques:", [...new Set(videos.map(stream => stream.status || "undefined"))]);
+    console.log(`[${new Date().toISOString()}] 🔄 YT Vid : ${videos.length} (upcoming + live)`);
+
     currentUpcomingStreams = videos;
-    console.log("currentUpcomingStreams mis à jour:", currentUpcomingStreams.length, "vidéos");
-    updateUpcomingStreams();
+
+    // Mise à jour visuelle uniquement si l'onglet est actif
+    if (document.getElementById("upcoming")?.classList.contains("active")) {
+      updateUpcomingStreams();
+    }
+
   } catch (error) {
-    console.error("Erreur lors de la récupération des vidéos à venir :", error);
-    displayError("Erreur lors du chargement des vidéos à venir. Veuillez vous reconnecter.", "upcoming-channels-list");
-    currentYoutubeToken = null;
-    updateLogoutButtonVisibility();
+    console.error("Erreur récupération vidéos upcoming :", error);
   }
 }
 
