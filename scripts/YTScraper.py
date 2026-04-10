@@ -29,10 +29,9 @@ try:
     db = client.get_database()
     youtube_channels_collection = db['youtubechannels']
     youtube_videos_collection = db['youtubeVideos']
-    scraper_stats_collection = db['scraperStats']
-    print("✅ Connecté à MongoDB")
+    scraper_stats_collection = db['scraperStats']    
 except ConnectionFailure as e:
-    print(f"Erreur MongoDB : {e}")
+    print(f"YTSCRAPPER Erreur MongoDB : {e}")
     sys.exit(1)
 
 
