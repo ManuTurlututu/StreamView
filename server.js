@@ -1293,12 +1293,10 @@ function scheduleYoutubeScraper() {
     }
 
     const scrapMinutes = Math.ceil(lastScrapDurationSeconds / 60);
-    let intervalMinutes = Math.max(3, Math.min(12, scrapMinutes + 1));    
-
-    console.log(`[${new Date().toISOString()}]⏱️ YT Scraper interval ${intervalMinutes} min (Last ScrapTime : ${lastScrapDurationSeconds}s)`);
+    let intervalMinutes = Math.max(3, Math.min(12, scrapMinutes + 1));   
 
     currentYoutubeCron = cron.schedule(`*/${intervalMinutes} * * * *`, async () => {
-        console.log(`\n[${new Date().toISOString()}]🚀 Lancement YT Scraper (dynamique)`);
+        console.log(`[${new Date().toISOString()}]⏱️ YT Scraper Set ${intervalMinutes}min (Last ScrapTime : ${lastScrapDurationSeconds}s)`);
 
         if (!youtubeAccessToken && youtubeRefreshToken) {
             console.log(`[${new Date().toISOString()}] Rafraîchissement du jeton YouTube...`);
