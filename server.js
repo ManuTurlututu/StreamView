@@ -62,7 +62,7 @@ let currentYoutubeCron = null;
 
 // Connexion à MongoDB
 mongoose.connect(process.env.MONGODB_URI)
-.then(() => console.log(`[${new Date().toISOString()}]✅ Connecté à MongoDB`))
+.then(() => console.log(`[${new Date().toISOString()}]✅ Connected (MongoDB)`))
 .catch(error => console.error(`[${new Date().toISOString()}]❌ Erreur de connexion à MongoDB:`, error.message));
 
 // Schéma pour les paramètres des cloches de notification
@@ -182,17 +182,10 @@ async function saveNotificationLog(notification) {
   try {
     const newNotification = new Notification(notification);
     await newNotification.save();
-    console.log(`[${new Date().toISOString()}] Notification enregistrée dans MongoDB:`, {
-      id: notification.id,
-      user_name: notification.user_name,
-      platform: notification.platform,
-      timestamp: notification.timestamp
-    });
+    console.log(`[${new Date().toISOString()}]💾 Notification Saved (MongoDB) : ${notification.user_name}(${notification.platform})`); 
+  
     notificationEmitter.emit("new-notification", notification);
-    console.log(`[${new Date().toISOString()}] Notification émise via SSE:`, {
-      id: notification.id,
-      user_name: notification.user_name
-    });
+    console.log(`[${new Date().toISOString()}]📡 SSE Notification sent : ${notification.user_name}(${notification.platform})`);
   } catch (error) {
     console.error(`[${new Date().toISOString()}]❌ Erreur lors de la sauvegarde de la notification dans MongoDB:`, error.message);
   }
@@ -220,7 +213,7 @@ async function saveYoutubeChannels(channels) {
       }
     }));
     await YoutubeChannel.bulkWrite(operations);
-    console.log(`[${new Date().toISOString()}] Chaînes YouTube sauvegardées dans MongoDB: ${channels.length} chaînes`);
+    console.log(`[${new Date().toISOString()}]💾 YouTube Channels Saved (MongoDB) : ${channels.length} chaînes`);
   } catch (error) {
     console.error(`[${new Date().toISOString()}]❌ Erreur lors de la sauvegarde des chaînes YouTube dans MongoDB:`, error.message);
   }
@@ -286,7 +279,7 @@ async function syncYoutubeLiveVideos() {
     // Détecter les nouveaux streams
     const newStreams = formattedVideos.filter(video => !existingStreamIds.has(video.user_id));
     if (newStreams.length > 0) {
-      console.log(`[${new Date().toISOString()}] ${newStreams.length}🔴 New YT Live : `, newStreams.map(s => s.user_name));
+      console.log(`[${new Date().toISOString()}]🔴 New YT Live(${newStreams.length}) : `, newStreams.map(s => s.user_name));
     }
 
     // Notifications pour nouveaux lives
@@ -314,7 +307,7 @@ async function syncYoutubeLiveVideos() {
         }
       }));
       await Live.bulkWrite(operations);
-      console.log(`[${new Date().toISOString()}]✅ YT Live Synch : ${liveVideos.length} lives`);
+      console.log(`[${new Date().toISOString()}]✅ YT Live Updated (MongoDB) : ${liveVideos.length}`);
     }
 
     // Nettoyage des lives terminés
@@ -401,7 +394,7 @@ async function syncTwitchLiveStreams() {
     // Détecter les nouveaux streams
     const newStreams = formattedStreams.filter(stream => !existingStreamIds.has(stream.user_id));
     if (newStreams.length > 0) {
-        console.log(`[${new Date().toISOString()}]🔴 ${newStreams.length} New Twitch Live : `, newStreams.map(s => s.user_name));
+        console.log(`[${new Date().toISOString()}]🔴 New Twitch Live(${newStreams.length}) : `, newStreams.map(s => s.user_name));
     }
 
     // Enregistrer une notification pour chaque nouveau stream
@@ -614,8 +607,7 @@ async function saveNotificationSettings(settings) {
 }
 
 // Charger les paramètres et jetons au démarrage
-(async () => {
-  console.log(`[${new Date().toISOString()}]📡 Chargement initial des données...`);
+(async () => {  
 
   notificationSettings = await loadNotificationSettings();
   youtubeChannels = await loadYoutubeChannels();
@@ -623,7 +615,7 @@ async function saveNotificationSettings(settings) {
   await loadYoutubeTokens();
   await loadTwitchTokens();
 
-  console.log(`[${new Date().toISOString()}]✅ Initialisation terminée | YT Token: ${!!youtubeAccessToken} | TW Token: ${!!twitchAccessToken}`);
+  console.log(`[${new Date().toISOString()}]✅ Token Initialisation | YT Token: ${!!youtubeAccessToken} | TW Token: ${!!twitchAccessToken}`);
 
   // Lancement du scraper dynamique YouTube
   scheduleYoutubeScraper();
@@ -913,7 +905,7 @@ async function getYoutubeSubscriptions(accessToken) {
       });
     }
 
-    console.log(`[${new Date().toISOString()}] Récupéré ${channelDetails.length} chaînes YouTube`);
+    console.log(`[${new Date().toISOString()}]📡 YT Channels (YT_API) : ${channelDetails.length}`);
     return channelDetails;
   } catch (error) {
     console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des abonnements YouTube:`, error.message);
@@ -1091,8 +1083,7 @@ app.get("/get-youtube-channels", async (req, res) => {
   try {
     const subscriptions = await getYoutubeSubscriptions(youtubeAccessToken);
     youtubeChannels = subscriptions;
-    await saveYoutubeChannels(subscriptions);
-    console.log(`[${new Date().toISOString()}] Chaînes YouTube mises à jour avec succès: ${subscriptions.length} chaînes`);
+    await saveYoutubeChannels(subscriptions);    
     res.json(youtubeChannels);
   } catch (error) {
     console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des chaînes YouTube:`, error.message);
@@ -1208,7 +1199,7 @@ app.post("/save-notification-log", async (req, res) => {
 app.get("/get-notification-log", async (req, res) => {
   try {
     const notificationLog = await loadNotificationLog();
-    console.log(`[${new Date().toISOString()}] Journal des notifications affiché : ${notificationLog.length}`);
+    console.log(`[${new Date().toISOString()}]📖 Notification Log : ${notificationLog.length}`);
     res.json(notificationLog);
   } catch (error) {
     console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération du journal des notifications:`, error.message);
@@ -1256,12 +1247,12 @@ app.use((err, req, res, next) => {
 });
 
 app.get("/get-youtube-videos", async (req, res) => {
-  console.log(`[${new Date().toISOString()}] Requête /get-youtube-videos`);
+  console.log(`[${new Date().toISOString()}]🔄 Requête /get-youtube-videos`);
   try {
     const videos = await YoutubeVideo.find({
       status: "upcoming"
     }).sort({ startTime: 1 });
-    console.log(`[${new Date().toISOString()}] Vidéos récupérées: ${videos.length} (upcoming + live)`);
+    console.log(`[${new Date().toISOString()}]🔄 YT Vid : ${videos.length} (upcoming + live)`);
     res.json(videos);
   } catch (error) {
     console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des vidéos:`, error.message);
@@ -1270,10 +1261,10 @@ app.get("/get-youtube-videos", async (req, res) => {
 });
 
 app.get("/get-live-streams", async (req, res) => {
-  console.log(`[${new Date().toISOString()}] Requête /get-live-streams`);
+  console.log(`[${new Date().toISOString()}]🔄 Requête /get-live-streams`);
   try {
     const streams = await Live.find({}).sort({ started_at: -1 });
-    console.log(`[${new Date().toISOString()}] Streams récupérés: ${streams.length}`);
+    console.log(`[${new Date().toISOString()}]🔴 Live (YT & TW) : ${streams.length}`);
     res.json(streams);
   } catch (error) {
     console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des streams:`, error.message);
@@ -1304,7 +1295,7 @@ function scheduleYoutubeScraper() {
     const scrapMinutes = Math.ceil(lastScrapDurationSeconds / 60);
     let intervalMinutes = Math.max(3, Math.min(12, scrapMinutes + 1));    
 
-    console.log(`[${new Date().toISOString()}]⏱️ YT Scraper planifié toutes les ${intervalMinutes} minutes (dernière durée: ${lastScrapDurationSeconds}s)`);
+    console.log(`[${new Date().toISOString()}]⏱️ YT Scraper interval ${intervalMinutes} min (Last ScrapTime : ${lastScrapDurationSeconds}s)`);
 
     currentYoutubeCron = cron.schedule(`*/${intervalMinutes} * * * *`, async () => {
         console.log(`\n[${new Date().toISOString()}]🚀 Lancement YT Scraper (dynamique)`);
@@ -1341,11 +1332,12 @@ function scheduleYoutubeScraper() {
 
 // Synchronisation Live Twitch + YouTube toutes les minutes
 cron.schedule('*/1 * * * *', async () => {
-  console.log(`[${new Date().toISOString()}]🔄 Synchro Live Twitch + YouTube...`);
+  
   await Promise.all([
     syncTwitchLiveStreams().catch(err => console.error("TW Sync Error:", err.message)),
     syncYoutubeLiveVideos().catch(err => console.error("YT Sync Error:", err.message))
   ]);
+  console.log(`[${new Date().toISOString()}]🔄 Live Refresh (TW & YT)`);
 });
 
 // Auto-ping pour éviter le spindown (Render, Railway, etc.)
