@@ -1,3 +1,4 @@
+from pymongo import UpdateOne
 import sys
 import requests
 import os
@@ -267,9 +268,52 @@ def main():
     current_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
     if video_results:
-        youtube_videos_collection.delete_many({})
-        youtube_videos_collection.insert_many(video_results)
+        operations = []
+        
+        for video in video_results:
+            vid_url = video.get("vidUrl")
+            if not vid_url:
+                continue
 
+            if video.get("status") == "live":
+                # On retire explicitement startTime du $set pour éviter le conflit
+                set_data = {k: v for k, v in video.items() if k != "startTime"}
+
+                operations.append(
+                    UpdateOne(
+                        filter={"vidUrl": vid_url},
+                        update={
+                            "$set": set_data,
+                            "$setOnInsert": {
+                                "startTime": str(int(time.time())),
+                                "firstDetectedAt": datetime.now(timezone.utc).isoformat()
+                            }
+                        },
+                        upsert=True
+                    )
+                )
+            else:
+                # Upcoming : mise à jour complète normale
+                operations.append(
+                    UpdateOne(
+                        filter={"vidUrl": vid_url},
+                        update={"$set": video},
+                        upsert=True
+                    )
+                )
+
+        # Exécution du bulk_write
+        if operations:
+            try:
+                result = youtube_videos_collection.bulk_write(operations)
+                log_message(f"✅ {len(video_results)} vidéos traitées avec upsert "
+                           f"({result.upserted_count} créées | {result.modified_count} mises à jour)")
+            except Exception as bulk_error:
+                log_message(f"❌ Erreur pendant bulk_write: {bulk_error}")
+                # Affichage plus détaillé pour debug
+                print("BulkWriteError details:", str(bulk_error))
+
+    # ====================== SAUVEGARDE DES STATS ======================
     scraper_stats_collection.update_one(
         {"_id": "last_scraper_run"},
         {"$set": {
