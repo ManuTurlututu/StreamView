@@ -724,7 +724,7 @@ app.get("/auth/twitch/callback", async (req, res) => {
     }
 
     try {
-        console.log(`[${new Date().toISOString()}] Requête /auth/twitch/callback avec code: ${code}`);
+        console.log(`[${new Date().toISOString()}]🔄 /auth/twitch/callback code: ${code}`);
         const tokenResponse = await axios.post("https://id.twitch.tv/oauth2/token", null, {
             params: {
                 client_id: process.env.TWITCH_CLIENT_ID,
@@ -966,7 +966,7 @@ async function runPythonScript(accessToken, retryCount = 0) {
 }
 
 app.post("/run-python", async (req, res) => {
-  console.log(`[${new Date().toISOString()}] Requête /run-python reçue`);
+  console.log(`[${new Date().toISOString()}]🔄 /run-python`);
   if (!youtubeAccessToken) {
     console.error(`[${new Date().toISOString()}]❌ Aucun jeton d’accès YouTube disponible`);
     return res.status(401).json({ error: "❌ Aucun jeton YouTube disponible, veuillez vous connecter via /auth/youtube" });
@@ -1017,7 +1017,7 @@ app.get("/get-youtube-token", async (req, res) => {
 // Endpoint pour rafraîchir le jeton Twitch côté client
 app.get("/refresh-token", async (req, res) => {
   const clientIp = req.ip;
-  console.log(`[${new Date().toISOString()}] Requête /refresh-token reçue de l'IP: ${clientIp}`);
+  console.log(`[${new Date().toISOString()}]🔄 /refresh-token IP: ${clientIp}`);
 
   if (!twitchRefreshToken) {
     console.error(`[${new Date().toISOString()}]❌ Aucun refresh_token disponible dans /refresh-token, IP: ${clientIp}`);
@@ -1047,7 +1047,7 @@ app.get('/get-recent-notifications', async (req, res) => {
       timestamp: { $gte: recentTimestamp }
     }).sort({ timestamp: -1 }).limit(50);
     
-    console.log(`[${new Date().toISOString()}] Récupéré ${notifications.length} notifications récentes`);
+    console.log(`[${new Date().toISOString()}]🔄 /get-recent-notifications : ${notifications.length}`);
     res.json(notifications);
   } catch (error) {
     console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des notifications:`, error.message);
@@ -1057,8 +1057,7 @@ app.get('/get-recent-notifications', async (req, res) => {
 
 // Endpoint pour récupérer les chaînes YouTube abonnées
 app.get("/get-youtube-channels", async (req, res) => {
-  console.log(`[${new Date().toISOString()}] Requête /get-youtube-channels - Access token: ${youtubeAccessToken ? "Présent" : "Absent"}, Refresh token: ${youtubeRefreshToken ? "Présent" : "Absent"}`);
-
+  
   if (!youtubeAccessToken && !youtubeRefreshToken) {
     console.warn(`[${new Date().toISOString()}]❌ Aucun jeton d’accès ou refresh token disponible, renvoi d’une liste vide`);
     return res.status(401).json({ error: "❌ Aucun jeton YouTube disponible, veuillez vous connecter via /auth/youtube" });
@@ -1111,11 +1110,10 @@ app.get("/get-youtube-channels", async (req, res) => {
 // Endpoint pour récupérer les paramètres de notification
 app.get("/get-notifications", async (req, res) => {
   const userId = req.query.userId;
-  console.log(`[${new Date().toISOString()}] Requête reçue pour /get-notifications:`, { userId });
-
+  
   if (!userId) {
-    console.error(`[${new Date().toISOString()}] userId manquant`);
-    return res.status(400).json({ error: "userId manquant" });
+    console.error(`[${new Date().toISOString()}]🔄 /get-notifications userId manquant`);
+    return res.status(400).json({ error: "/get-notifications userId manquant" });
   }
 
   try {
@@ -1125,7 +1123,7 @@ app.get("/get-notifications", async (req, res) => {
       channelId: setting.channelId,
       notificationsEnabled: setting.notificationsEnabled
     }));
-    console.log(`[${new Date().toISOString()}] Paramètres de notification renvoyés: ${formattedSettings.length} paramètres`);
+    console.log(`[${new Date().toISOString()}]🛎️ Bell Notification read : ${formattedSettings.length}`);
     res.json(formattedSettings);
   } catch (error) {
     console.error(`[${new Date().toISOString()}]❌ Erreur lors de la récupération des paramètres de notification:`, error.message);
@@ -1137,7 +1135,7 @@ app.get("/get-notifications", async (req, res) => {
 app.post("/set-notification", async (req, res) => {
   const { userId, platform, channelId, notificationsEnabled } = req.body;
 
-  console.log(`[${new Date().toISOString()}] Requête reçue pour /set-notification:`, { userId, platform, channelId, notificationsEnabled });
+  console.log(`[${new Date().toISOString()}]🔄 /set-notification:`, { userId, platform, channelId, notificationsEnabled });
 
   if (!userId || !platform || !channelId || typeof notificationsEnabled !== "boolean") {
     console.error(`[${new Date().toISOString()}]❌ Paramètres invalides:`, { userId, platform, channelId, notificationsEnabled });
@@ -1150,7 +1148,7 @@ app.post("/set-notification", async (req, res) => {
       { $set: { notificationsEnabled, timestamps: true } },
       { upsert: true }
     );
-    console.log(`[${new Date().toISOString()}] Paramètres de notification mis à jour dans ChannelsBells:`, { userId, platform, channelId, notificationsEnabled });
+    console.log(`[${new Date().toISOString()}]🔄 Notification Updated in ChannelsBells :`, { userId, platform, channelId, notificationsEnabled });
     res.json({ success: true });
   } catch (error) {
     console.error(`[${new Date().toISOString()}]❌ Erreur lors de la mise à jour des paramètres de notification:`, error.message);
@@ -1246,7 +1244,7 @@ app.use((err, req, res, next) => {
 });
 
 app.get("/get-youtube-videos", async (req, res) => {
-  console.log(`[${new Date().toISOString()}]🔄 Requête /get-youtube-videos`);
+  console.log(`[${new Date().toISOString()}]🔄 /get-youtube-videos`);
   try {
     const videos = await YoutubeVideo.find({
       status: "upcoming"
@@ -1260,7 +1258,7 @@ app.get("/get-youtube-videos", async (req, res) => {
 });
 
 app.get("/get-live-streams", async (req, res) => {
-  console.log(`[${new Date().toISOString()}]🔄 Requête /get-live-streams`);
+  console.log(`[${new Date().toISOString()}]🔄 /get-live-streams`);
   try {
     const streams = await Live.find({}).sort({ started_at: -1 });
     console.log(`[${new Date().toISOString()}]🔴 Live (YT & TW) : ${streams.length}`);
