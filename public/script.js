@@ -598,25 +598,47 @@ function showNotificationError(message) {
 
 function filterUpcomingStreams(query) {
   const filteredStreams = currentUpcomingStreams.filter(stream =>
-    stream.chTitle.toLowerCase().includes(query.toLowerCase()) || stream.vidTitle.toLowerCase().includes(query.toLowerCase())
+    stream.chTitle.toLowerCase().includes(query.toLowerCase()) || 
+    stream.vidTitle.toLowerCase().includes(query.toLowerCase())
   );
+
   const channelsList = document.getElementById('upcoming-channels-list');
-  if (channelsList) {
-    channelsList.innerHTML = '';
-    filteredStreams.forEach(stream => {
-      const card = createUpcomingCard(stream);
-      channelsList.appendChild(card);
-    });
-  }
+  if (!channelsList) return;
+
+  channelsList.innerHTML = '';
+
+  filteredStreams.forEach(stream => {
+    const card = createUpcomingCard(stream);
+    channelsList.appendChild(card);
+  });
+
+  // ✅ Force la mise à jour des compteurs après l'ajout au DOM
+  setTimeout(updateAllUpcomingCountdowns, 150);
+}
+
+// Met à jour tous les compteurs Upcoming existants
+function updateAllUpcomingCountdowns() {
+  Object.keys(countdownTimers).forEach(elementId => {
+    const countdownElement = document.getElementById(elementId);
+    if (countdownElement) {
+      // On force un update immédiat
+      const timerFunc = countdownTimers[elementId];
+      if (typeof timerFunc === 'function') {
+        timerFunc(); 
+      }
+    }
+  });
 }
 
 async function updateUpcomingStreams() {
   const token = await getYoutubeAccessToken();
   const channelsList = document.getElementById("upcoming-channels-list");
+  
   if (!channelsList) {
     console.error("Element with ID 'upcoming-channels-list' not found");
     return;
   }
+
   if (!token) {
     console.log("Aucun jeton YouTube, affichage du message d'erreur");
     channelsList.innerHTML = "";
@@ -630,13 +652,21 @@ async function updateUpcomingStreams() {
       const errorData = await response.json();
       throw new Error(errorData.error || "Échec de la récupération des vidéos à venir");
     }
+
     const videos = await response.json();
     currentUpcomingStreams = videos;
+
+    // Nettoyage + affichage des cartes
     channelsList.innerHTML = "";
+
     videos.forEach(stream => {
       const card = createUpcomingCard(stream);
       channelsList.appendChild(card);
     });
+
+    // ✅ Force la mise à jour des compteurs après l'ajout au DOM
+    setTimeout(updateAllUpcomingCountdowns, 150);
+
   } catch (error) {
     console.error("Erreur lors de la récupération des vidéos à venir :", error);
     displayError("Erreur lors du chargement des vidéos à venir. Veuillez vous reconnecter.", "upcoming-channels-list");
@@ -732,54 +762,86 @@ function formatDate(timestamp) {
 
 function createCountdown(timestamp, elementId, vidUrl, bellId) {
   const targetTime = parseInt(timestamp) * 1000;
-  let hasOpened = false;
+  const countdownId = elementId;
+
+  if (countdownTimers[countdownId]) {
+    clearInterval(countdownTimers[countdownId]);
+  }
 
   const updateCountdown = () => {
-    const now = Date.now();
-    const distance = targetTime - now;
-    const countdownElement = document.getElementById(elementId);
-    const itemContainer = countdownElement ? countdownElement.closest('.item-container') : null;
-    const bellButton = document.getElementById(bellId);
+    const el = document.getElementById(countdownId);
+    if (!el) return;
 
-    if (!countdownElement || !itemContainer || !bellButton) {
-      clearInterval(countdownTimers[elementId]);
-      delete countdownTimers[elementId];
+    const diff = targetTime - Date.now();
+
+    if (diff <= 0) {
+      el.textContent = "EN DIRECT !";
+      el.classList.add("text-red-500", "font-bold");
       return;
     }
 
-    if (distance < 0) {
-      countdownElement.innerHTML = 'Live';
-      countdownElement.classList.remove('text-blue-400');
-      countdownElement.classList.add('text-red-500');
-      itemContainer.classList.remove('yellow-border');
-      itemContainer.classList.add('red-border');
-      bellButton.style.display = 'none';
+    // Affichage compteur
+    const hours = Math.floor(diff / 3600000);
+    const minutes = Math.floor((diff % 3600000) / 60000);
+    const seconds = Math.floor((diff % 60000) / 1000);
+    el.textContent = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+
+    // ====================== AUTO LAUNCH ======================
+    const container = el.closest('.item-container');
+    if (!container) return;
+
+    const chTitle = container.querySelector('p.text-gray-300.font-bold')?.textContent.trim() || '';
+    const bellKey = `bell_${chTitle}_${timestamp}`;
+    const triggeredKey = `launched_${bellKey}`;     // Clé persistante
+
+    const isBellActive = container.classList.contains('yellow-border');
+
+    // Si déjà lancé → on ne fait plus rien
+    if (localStorage.getItem(triggeredKey)) {
+      // On désactive visuellement au cas où
+      container.classList.remove('yellow-border');
+      const bell = container.querySelector('.bell-button');
+      if (bell) bell.classList.remove('yellow');
       return;
     }
 
-    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+    if (isBellActive && diff <= 3 * 60 * 1000 && diff > 0) {
+      console.log(`[AUTO LAUNCH] Déclenchement → ${chTitle}`);
 
-    countdownElement.innerHTML = `${days}j ${hours}h ${minutes}m ${seconds}s`;
-    countdownElement.classList.remove('text-red-500');
-    countdownElement.classList.add('text-blue-400');
-    itemContainer.classList.remove('red-border');
-    bellButton.style.display = 'flex';
+      autoLaunchVideo(vidUrl, chTitle);
 
-    const totalSeconds = Math.floor(distance / 1000);
-    if (totalSeconds <= 5 * 60 && bellButton.classList.contains('yellow') && !hasOpened) {
-      window.open(vidUrl, '_blank');
-      const alertSound = new Audio('/sounds/tsar-bell.mp3');
-      alertSound.volume = 0.15;
-      alertSound.play().catch(e => console.error("Erreur lors de la lecture du son :", e.message));
-      hasOpened = true;
+      // Marque comme lancé (persiste même après rechargement)
+      localStorage.setItem(triggeredKey, 'true');
+
+      // Désactive visuellement la cloche
+      container.classList.remove('yellow-border');
+      const bell = container.querySelector('.bell-button');
+      if (bell) bell.classList.remove('yellow');
     }
   };
 
-  updateCountdown();
-  countdownTimers[elementId] = setInterval(updateCountdown, 1000);
+  setTimeout(updateCountdown, 150);
+  countdownTimers[countdownId] = setInterval(updateCountdown, 10000);
+}
+
+// Fonction Auto-Launch simple
+function autoLaunchVideo(vidUrl, title) {
+  console.log(`[AUTO LAUNCH] → ${title}`);
+
+  new Audio('/sounds/Big-Boom.mp3').play().catch(() => {});
+
+  window.open(vidUrl, '_blank');
+
+  const notif = document.createElement("div");
+  notif.className = "notification";
+  notif.innerHTML = `
+    <strong>✅ Auto-Launch :</strong> ${title}<br>
+    Vidéo ouverte dans un nouvel onglet
+    <span class="notification-close">✕</span>
+  `;
+  document.getElementById("notifications")?.appendChild(notif);
+
+  setTimeout(() => notif.remove(), 8000);
 }
 
 function toggleBellColor(buttonId, chTitle, startTime) {
@@ -791,7 +853,7 @@ function toggleBellColor(buttonId, chTitle, startTime) {
   if (!itemContainer.classList.contains('red-border')) {
     itemContainer.classList.toggle('yellow-border', isActive);
   }
-  if (isActive) {
+  if (isActive) {    
     const notifSound = new Audio('/sounds/bell-Notif.mp3');
     notifSound.play().catch(e => console.error("Erreur lors de la lecture du son :", e.message));
   }
@@ -814,22 +876,49 @@ function formatStreamDuration(startedAt) {
 }
 
 function createNotificationCard(notification) {
-  const truncatedTitle = truncateText(notification.title, 85);
+  const truncatedTitle = truncateText(notification.title || '', 85);
+  const truncatedChannelName = truncateText(notification.user_name || 'Utilisateur inconnu', 22);
+
+  // Détermination du lien correct
+  let link = "#";
+  if (notification.platform === "youtube") {
+    link = notification.vidUrl || notification.stream_url || "#";
+  } else if (notification.platform === "twitch") {
+    link = notification.stream_url || `https://www.twitch.tv/${notification.user_name?.toLowerCase()}`;
+  } else if (notification.stream_url) {
+    link = notification.stream_url;
+  }
+
   const card = document.createElement("a");
-  card.className = "notification-card";
-  card.href = notification.stream_url || `https://www.twitch.tv/${notification.user_name.toLowerCase()}`;
+  card.className = `item-container notification-card ${notification.platform}-border`;
+  card.href = link;
   card.target = "_blank";
-  card.setAttribute("data-notification-id", notification.id);
+  card.setAttribute("data-notification-id", notification.id || "");
+
+  const avatarUrl = notification.avatar_url || 
+    'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png';
+
+  const thumbnailUrl = notification.thumbnail_url || 
+    (notification.platform === "twitch" 
+      ? 'https://static-cdn.jtvnw.net/ttv-static/404_preview-1280x720.jpg' 
+      : 'https://i.ytimg.com/vi/default.jpg'); // fallback si pas de thumbnail dans la notif
+
   card.innerHTML = `
-    <div class="avatar">
-      <img src="${notification.avatar_url}" alt="${notification.user_name}">
+    <div class="header-row">
+      <a href="${link}" target="_blank" style="position: relative;">
+        <img src="${avatarUrl}" alt="${notification.user_name}" class="channel-img">
+      </a>
+      <div class="channel-info">
+        <p class="channel-title" title="${notification.user_name}">${truncatedChannelName}</p>
+        <p class="notification-timestamp">${formatTimestamp(notification.timestamp)}</p>
+      </div>
     </div>
-    <div class="card-content">
-      <p class="channel-title">${notification.user_name}</p>
-      <p class="stream-title" title="${notification.title || 'Aucun titre'}">${truncatedTitle}</p>
-      <p class="notification-timestamp">${formatTimestamp(notification.timestamp)}</p>
-    </div>
+    <a href="${link}" target="_blank">
+      <img src="${thumbnailUrl}" alt="${truncatedTitle}" class="thumbnail">
+    </a>
+    <p class="stream-title" title="${notification.title || 'Aucun titre'}">${truncatedTitle}</p>
   `;
+
   return card;
 }
 
@@ -1084,7 +1173,10 @@ function displayNotificationHTML(stream) {
             title: stream.title,
             avatar_url: stream.avatar_url,
             platform: stream.platform || 'unknown',
-            stream_url: stream.stream_url || (stream.platform === 'youtube' ? stream.vidUrl : null),
+            vidUrl: stream.vidUrl || (stream.platform === 'youtube' ? stream.stream_url : null),
+            stream_url: stream.stream_url || 
+                        (stream.platform === 'youtube' ? (stream.vidUrl || stream.stream_url) : 
+                        `https://www.twitch.tv/${stream.user_name?.toLowerCase()}`),
             timestamp: stream.timestamp || Date.now()
         };
 
