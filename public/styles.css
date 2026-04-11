@@ -1,6 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Lora:wght@700&display=swap');
 
-/* Réinitialisation et styles globaux */
+/* ====================== STYLES GLOBAUX ====================== */
 body {
   font-family: Arial, sans-serif;
   background-color: #0f0f0f;
@@ -10,7 +10,6 @@ body {
   min-height: 100vh;
 }
 
-/* Conteneur principal */
 .container {
   width: 100%;
   margin: 0 auto;
@@ -19,7 +18,7 @@ body {
   padding-bottom: 10px;
 }
 
-/* Onglets */
+/* ====================== ONGLETS ====================== */
 .tabs {
   display: flex;
   justify-content: flex-start;
@@ -50,47 +49,16 @@ body {
   font-weight: bold;
 }
 
-.tab img {
-  width: 20px;
-  height: 15px;
-  vertical-align: middle;
-  margin-right: 5px;
-}
-
-.tab svg.live-icon {
-  width: 24px;
-  height: 24px;
-  vertical-align: middle;
-  margin-top: 0px;
-  fill:white
-}
-
-.tab svg.calendar-icon {
-  width: 20px;
-  height: 20px;
-  vertical-align: middle;
-  margin-top: 1px;
-}
-
-.tab svg.channels-icon {
-  width: 24px;
-  height: 24px;
+.tab img,
+.tab svg {
   vertical-align: middle;
 }
 
-.tab svg.notification-icon {
-  width: 24px;
-  height: 24px;
-  vertical-align: middle;  
-}
-
-.tab svg.settings-icon {
-  width: 21px;
-  height: 21px;
-  vertical-align: middle;
-  fill:white;
-  margin-top: 1px;
-}
+.tab svg.live-icon { width: 24px; height: 24px; margin-top: 0; fill: white; }
+.tab svg.calendar-icon { width: 20px; height: 20px; margin-top: 1px; }
+.tab svg.channels-icon { width: 24px; height: 24px; }
+.tab svg.notification-icon { width: 24px; height: 24px; }
+.tab svg.settings-icon { width: 21px; height: 21px; margin-top: 1px; fill: white; }
 
 /* Contenu des onglets */
 .tab-content {
@@ -101,9 +69,10 @@ body {
   display: block;
 }
 
-/* Grilles pour Live et Upcoming */
+/* ====================== GRILLES ====================== */
 #channels-list,
-#upcoming-channels-list {
+#upcoming-channels-list,
+#notification-log-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
   gap: 7px;
@@ -112,7 +81,7 @@ body {
   scroll-behavior: smooth;
 }
 
-/* Liste pour Channels */
+/* Liste des chaînes suivies (onglet Channels) */
 #followed-channels-list {
   display: flex;
   flex-direction: column;
@@ -122,8 +91,9 @@ body {
   margin: 0 auto;
 }
 
-/* Carte vidéo (Live et Upcoming) */
-.item-container {
+/* ====================== CARTES LIVE / UPCOMING / NOTIFICATIONS ====================== */
+.item-container,
+.notification-card {
   width: 270px;
   display: flex;
   flex-direction: column;
@@ -135,28 +105,32 @@ body {
   text-decoration: none;
   color: inherit;
   position: relative;
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.item-container.yellow-border {
-  border: 2px solid #ffff00;
+.item-container:hover,
+.notification-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(167, 112, 255, 0.2);
 }
 
-.item-container.red-border {
-  border: 2px solid red;
-}
-
-.twitch-purple-border {
+/* Bordures par plateforme */
+.twitch-border,
+.item-container.twitch-border,
+.notification-card.twitch-border {
   border: 2px solid #612fac;
 }
 
-.twitch-border {
-  border: 2px solid #612fac;
+.youtube-border,
+.item-container.youtube-border,
+.notification-card.youtube-border {
+  border: 2px solid #ff0000;
 }
 
-.youtube-border {
-  border: 2px solid red;
-}
+.item-container.yellow-border { border: 2px solid #ffff00; }
+.item-container.red-border { border: 2px solid red; }
 
+/* Header commun (avatar + infos) */
 .header-row {
   display: flex;
   justify-content: space-between;
@@ -165,57 +139,26 @@ body {
   margin-bottom: 10px;
 }
 
-.schedule-info {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+.channel-info {
+  align-items: right;
+  margin-top: -18px;
+  margin-right: -5px;
+  margin-left: -360px;
+  z-index: 10;
 }
 
-.schedule-info p {
-  font-size: 16px;
-  margin: 0;
+.channel-title {
+  font-family: 'Lora', serif;
+  font-size: 24px;
+  font-weight: 700;
   text-align: right;
-}
-
-.bell-button {
-  transition: transform 0.3s ease;
-  cursor: pointer;
-  width: 90px;
-  height: 90px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.bell-button:hover {
-  transform: scale(1.2);
-}
-
-.bell-button svg {
-  width: 100%;
-  height: 100%;
-  fill: #ffffff;
-  transition: fill 0.3s ease;
-}
-
-.bell-button.yellow svg {
-  fill: #ffff00;
-}
-
-.thumbnail {
-  transition: transform 0.3s;
-  width: 280px;
-  height: auto;
-  object-fit: cover;
-  aspect-ratio: 16/9;
-  border-radius: 15px;
-  margin: 0 -5px;
-  display: block;
-  z-index: 5;
-}
-
-.thumbnail:hover {
-  transform: scale(1.04);
+  color: #efeff1;
+  margin: 0 -7px;
+  text-shadow: 
+    -1px -1px 0 #000,  
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
 }
 
 .channel-img {
@@ -236,53 +179,24 @@ body {
   transform: scale(1.1);
 }
 
-.item-container .card-content {
-  width: 100%;
-  text-align: center;
+.thumbnail {
+  transition: transform 0.3s;
+  width: 280px;
+  height: auto;
+  object-fit: cover;
+  aspect-ratio: 16/9;
+  border-radius: 15px;
+  margin: 0 -5px;
+  display: block;
+  z-index: 5;
 }
 
-.item-container .card-content .live-status,
-.item-container .card-content .subscription-date,
-.item-container .card-content .notification-timestamp {
-  margin: 4px 0;
+.thumbnail:hover {
+  transform: scale(1.04);
 }
 
-.item-container .card-content {
-  font-size: 16px;
-  font-weight: bold;
-  color: #efeff1;
-}
-
-.item-container .channel-title {
-  font-family: 'Lora', serif;
-  font-size: 24px;
-  font-weight: 700;
-  text-align: right;
-  color: #efeff1;
-  margin: 0 -7px;
-  text-shadow: 
-    -1px -1px 0 #000,  
-    1px -1px 0 #000,
-    -1px 1px 0 #000,
-    1px 1px 0 #000;
-}
-
-.item-container .channel-info {
-  align-items: right;
-  margin-top: -18px;
-  margin-right: -5px;
-  margin-left: -360px;
-  z-index: 10;
-}
-
-.item-container .viewer-count {
-  text-align: right;
-  font-size: 18px;
-  color: rgb(235, 38, 52);
-  margin: 0 -6px;
-}
-
-.item-container .stream-title {
+/* Textes spécifiques aux cartes */
+.stream-title {
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -291,42 +205,29 @@ body {
   margin-bottom: -7px;
 }
 
-.item-container .game-title {
+.viewer-count {
+  text-align: right;
+  font-size: 18px;
+  color: rgb(235, 38, 52);
+  margin: 0 -6px;
+}
+
+.game-title {
   text-align: right;
   font-size: 14px;
   color: #a970ff;
   margin: 0 -6px;
 }
 
-.item-container .stream-duration {
+.stream-duration,
+.notification-timestamp {
   text-align: right;
   font-size: 14px;
+  color: #adadb8;
   margin: 0 -6px;
 }
 
-.item-container .live-status {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  color: #adadb8;
-}
-
-.item-container .card-content .subscription-date,
-.item-container .card-content .notification-timestamp {
-  font-size: 14px;
-  color: #adadb8;
-}
-
-.status-indicator {
-  width: 8px;
-  height: 8px;
-  background-color: #ff4444;
-  border-radius: 50%;
-  margin-right: 5px;
-}
-
-/* Carte pour Channels */
+/* ====================== CARTES CHAÎNES SUIVIES ====================== */
 .channel-card {
   display: flex;
   align-items: center;
@@ -344,21 +245,13 @@ body {
   margin-right: auto;
 }
 
-.channel-card.twitch-border {
-  border: 2px solid #612fac;
-}
-
-.channel-card.youtube-border {
-  border: 2px solid red;
-}
-
-.channel-card.notifications-enabled {
-  border: 2px solid #ffd700;
-}
-
 .channel-card:hover {
   background-color: #2a2a2e;
 }
+
+.channel-card.twitch-border { border: 2px solid #612fac; }
+.channel-card.youtube-border { border: 2px solid red; }
+.channel-card.notifications-enabled { border: 2px solid #ffd700; }
 
 .channel-card .avatar {
   width: 50px;
@@ -371,10 +264,6 @@ body {
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
-}
-
-.channel-card .card-content {
-  flex: 1;
 }
 
 .channel-card .channel-title {
@@ -407,68 +296,43 @@ body {
   fill: #ffd700;
 }
 
-/* Carte pour Notifications */
-.notification-card {
+/* ====================== NOTIFICATIONS VOLANTES (top-right) ====================== */
+.notifications-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
   display: flex;
-  align-items: center;
-  padding: 10px;
-  margin-bottom: 10px;
+  flex-direction: column-reverse;
+  gap: 10px;
+  max-width: 300px;
+  z-index: 1000;
+}
+
+.notification {
   background-color: #202024;
-  border-radius: 4px;
-  text-decoration: none;
-  color: #fff;
-  transition: background-color 0.2s, border 0.2s;
-  position: relative;
-}
-
-.notification-card:hover {
-  background-color: #2a2a2e;
-}
-
-.notification-card .avatar {
-  width: 50px;
-  height: 50px;
-  margin-right: 10px;
-}
-
-.notification-card .avatar img {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.notification-card .card-content {
-  flex: 1;
-}
-
-.notification-card .channel-title {
-  font-family: 'Lora', serif;
-  font-size: 20px;
-  font-weight: 700;
   color: #efeff1;
-  margin: 0;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #a970ff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-.notification-card .stream-title {
-  font-size: 14px;
-  color: #adadb8;
-  margin: 4px 0;
+.notification-close {
+  cursor: pointer;
+  color: #ff5555;
+  font-weight: bold;
+  margin-left: 10px;
 }
 
-.notification-card .notification-timestamp {
-  font-size: 14px;
-  color: #adadb8;
-  margin: 4px 0 0;
-}
-
-/* Boutons de connexion */
+/* ====================== BOUTONS & AUTRES ====================== */
 .login-button,
 .youtube-login-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  text-align: center;
   margin: 0 auto 20px;
   padding: 10px;
   border-radius: 10px;
@@ -478,23 +342,12 @@ body {
   height: 20px;
 }
 
-.login-button {
-  background-color: #467a57;
-}
+.login-button { background-color: #467a57; }
+.login-button:hover { background-color: #b43d3d; }
 
-.login-button:hover {
-  background-color: #b43d3d;
-}
+.youtube-login-button { background-color: #ff4444; }
+.youtube-login-button:hover { background-color: rgb(129, 129, 213); }
 
-.youtube-login-button {
-  background-color: #ff4444;
-}
-
-.youtube-login-button:hover {
-  background-color: rgb(129, 129, 213);
-}
-
-/* Conteneur de tri et recherche */
 .sort-search-container {
   display: flex;
   gap: 5px;
@@ -527,38 +380,39 @@ body {
   color: #adadb8;
 }
 
-/* Notifications */
-.notifications-container {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 10px;
-  max-width: 300px;
-  z-index: 1000;
-}
-
-.notification {
-  background-color: #202024;
-  color: #efeff1;
-  padding: 10px;
-  border-radius: 4px;
-  border: 1px solid #a970ff;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.notification-close {
+/* ====================== BELL BUTTON (Upcoming) ====================== */
+.bell-button {
+  transition: transform 0.3s ease;
   cursor: pointer;
-  color: #ff5555;
-  font-weight: bold;
-  margin-left: 10px;
+  width: 90px;
+  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* Loader */
+.bell-button:hover {
+  transform: scale(1.2);
+}
+
+.bell-button svg {
+  width: 100%;
+  height: 100%;
+  fill: #ffffff;           /* Blanc par défaut */
+  transition: fill 0.3s ease;
+}
+
+/* Quand la cloche est activée (jaune) */
+.bell-button.yellow svg {
+  fill: #ffff00 !important;   /* Jaune + !important pour forcer */
+}
+
+/* Optionnel : effet au hover quand elle est jaune */
+.bell-button.yellow:hover svg {
+  fill: #ffe600;
+}
+
+/* ====================== LOADER & ERREURS ====================== */
 .loader {
   text-align: center;
   color: #a970ff;
@@ -578,16 +432,15 @@ body {
   66% { content: "Chargement..."; }
 }
 
-/* Classes utilitaires */
+.error {
+  color: #ff5555;
+  text-align: center;
+}
+
+/* ====================== UTILITAIRES ====================== */
 .text-gray-300 { color: #d1d5db; }
 .text-blue-400 { color: #3ea6ff; }
 .text-red-500 { color: #ef4444; }
 .font-bold { font-weight: 700; }
 .hover\:text-blue-400:hover { color: #3ea6ff; }
 .mb-2 { margin-bottom: 0.5rem; }
-
-/* Erreurs */
-.error {
-  color: #ff5555;
-  text-align: center;
-}
