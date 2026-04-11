@@ -222,84 +222,27 @@ async function saveYoutubeChannels(channels) {
 // Synchroniser les vidéos live YouTube
 async function syncYoutubeLiveVideos() {
   try {
-    const liveVideos = await YoutubeVideo.find({ status: 'live' });    
+    const allVideos = await YoutubeVideo.find({});
 
-    const existingStreams = await Live.find({ platform: 'youtube' });
-    const existingStreamIds = new Set(existingStreams.map(stream => stream.user_id));
+    const liveVideos = allVideos.filter(v => v.status === 'live');
 
-    // ====================== AJUSTEMENT SELON INTERVALLE CRON ======================
-    // Tu peux changer cette valeur facilement ici
-    const scraperIntervalMinutes = 10;                    // ← Change ici selon ton cron (ex: 8, 10, 12...)
-    const adjustmentMs = (scraperIntervalMinutes / 2) * 60 * 1000;   // moitié de l'intervalle en ms
+    const formattedLives = liveVideos.map(video => ({
+      platform: 'youtube',
+      user_id: video.chUrl.split('/channel/')[1] || video.chTitle || 'unknown',
+      user_name: video.chTitle || 'Inconnu',
+      title: video.vidTitle || 'Aucun titre',
+      thumbnail_url: video.vidThumbnail || '',
+      avatar_url: video.chThumbnail || '',
+      viewer_count: video.viewer_count || 0,
+      started_at: Number(video.startTime) * 1000 || Date.now() - (15 * 60 * 1000),
+      game_name: 'Inconnu',
+      stream_url: video.vidUrl,
+      timestamp: Date.now()
+    }));
 
-    const formattedVideos = liveVideos.map(video => {
-      let started_at;
-
-      if (video.startTime) {
-        const ts = Number(video.startTime);
-
-        if (!isNaN(ts)) {
-          if (ts > 1000000000 && ts < 2000000000) {        // timestamp en secondes
-            let detectedTime = ts * 1000;                   // conversion en millisecondes
-
-            // Ajustement : on enlève la moitié de l'intervalle du scraper
-            started_at = detectedTime - adjustmentMs;
-
-            // Sécurité : ne pas aller dans le futur ou trop loin dans le passé
-            if (started_at > Date.now()) {
-              started_at = Date.now() - (5 * 60 * 1000);    // max 5 min dans le passé
-            }
-          } else if (ts > 1000000000000) {
-            started_at = ts - adjustmentMs;
-          } else {
-            started_at = Date.now();
-          }
-        } else {
-          started_at = Date.now();
-        }
-      } else {
-        started_at = Date.now();
-      }
-
-      return {
-        platform: 'youtube',
-        user_id: video.chUrl.split('/channel/')[1] || video.chTitle || 'unknown',
-        user_name: video.chTitle || 'Inconnu',
-        title: video.vidTitle || 'Aucun titre',
-        thumbnail_url: video.vidThumbnail || 'https://i.ytimg.com/img/no_thumbnail.jpg',
-        avatar_url: video.chThumbnail || 'https://yt3.ggpht.com/ytc/default-channel-img.jpg',
-        viewer_count: video.viewer_count || 0,
-        started_at: started_at,
-        game_name: 'Inconnu',
-        stream_url: video.vidUrl,
-        timestamp: Date.now()
-      };
-    });
-
-    // Détecter les nouveaux streams
-    const newStreams = formattedVideos.filter(video => !existingStreamIds.has(video.user_id));
-    if (newStreams.length > 0) {
-      console.log(`[${new Date().toISOString()}]🔴 New YT Live(${newStreams.length}) : `, newStreams.map(s => s.user_name));
-    }
-
-    // Notifications pour nouveaux lives
-    for (const video of newStreams) {
-      const notification = {
-        id: `youtube-${video.user_id}-${Date.now()}`,
-        user_id: video.user_id,
-        user_name: video.user_name,
-        title: video.title,
-        avatar_url: video.avatar_url,
-        platform: 'youtube',
-        vidUrl: video.stream_url,
-        timestamp: Date.now()
-      };
-      await saveNotificationLog(notification);
-    }
-
-    // Sauvegarde dans liveStreams
-    if (formattedVideos.length > 0) {
-      const operations = formattedVideos.map(video => ({
+    // Mise à jour / upsert des lives
+    if (formattedLives.length > 0) {
+      const operations = formattedLives.map(video => ({
         updateOne: {
           filter: { platform: 'youtube', user_id: video.user_id },
           update: { $set: video },
@@ -307,15 +250,19 @@ async function syncYoutubeLiveVideos() {
         }
       }));
       await Live.bulkWrite(operations);
-      console.log(`[${new Date().toISOString()}]✅ YT Live Updated (MongoDB) : ${liveVideos.length}`);
     }
 
-    // Nettoyage des lives terminés
-    await Live.deleteMany({ 
-      platform: 'youtube', 
-      user_id: { $nin: formattedVideos.map(video => video.user_id) } 
+    // Nettoyage : on supprime uniquement les lives qui ne sont plus dans les "live" actuels
+    const currentLiveIds = new Set(formattedLives.map(v => v.user_id));
+
+    const deleteResult = await Live.deleteMany({
+      platform: 'youtube',
+      user_id: { $nin: Array.from(currentLiveIds) }
     });
-    console.log(`[${new Date().toISOString()}]✅ Ended YT Live removed`);
+
+    if (deleteResult.deletedCount > 0) {
+      console.log(`[${new Date().toISOString()}] 🗑️ ${deleteResult.deletedCount} YouTube live terminé(s) supprimé(s) de liveStreams`);
+    }
 
   } catch (error) {
     console.error(`[${new Date().toISOString()}] ❌ Erreur sync YouTube Live:`, error.message);
