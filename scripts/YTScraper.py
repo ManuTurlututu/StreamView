@@ -221,7 +221,7 @@ def main():
 
     log_message(f"📈 Last Peak Ram : {prev_peak_mb:.1f} MB | Workers: {prev_workers}")
 
-    # ====================== WORKERS ======================
+    # ====================== DÉTERMINATION DU NOMBRE DE WORKERS ======================
     minutes_since_last = 0
     if stats and stats.get("timestamp"):
         try:
@@ -243,7 +243,7 @@ def main():
         max_workers = 1
         log_message(f"⚠️ Plus de 8 min depuis dernier run → workers forcés à 1")
     else:
-        max_workers = min(2, prev_workers + 1) # max worker 2 fastest on render
+        max_workers = min(2, prev_workers + 1)
         log_message(f"✅ workers set at : {max_workers}")
         
 
@@ -260,12 +260,37 @@ def main():
                 video_results.extend(result)
                 time.sleep(0.07)
 
-    # ====================== SAUVEGARDE & STATS FINALES ======================
-    execution_time = time.time() - start_time
-    final_peak_mb = get_current_peak_mb()
-    total_html_mb = total_html_size / (1024 * 1024)
-    current_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    # ====================== GESTION INTELLIGENTE DES STATUTS (LIVE → VOD) ======================
+    log_message("🔄 Mise à jour des statuts Live → VOD...")
 
+    # Récupérer tous les anciens lives
+    old_lives = list(youtube_videos_collection.find({"status": "live"}))
+
+    current_live_urls = {video["vidUrl"] for video in video_results if video.get("status") == "live"}
+
+    updates = []
+    converted_to_vod = 0
+
+    for old in old_lives:
+        if old["vidUrl"] not in current_live_urls:
+            # Cette vidéo n'est plus en live → on la passe en VOD
+            updates.append(
+                UpdateOne(
+                    {"vidUrl": old["vidUrl"]},
+                    {"$set": {
+                        "status": "vod",
+                        "endedAt": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.now().isoformat()
+                    }}
+                )
+            )
+            converted_to_vod += 1
+
+    if updates:
+        youtube_videos_collection.bulk_write(updates)
+        log_message(f"✅ {converted_to_vod} live(s) terminé(s) → passés en statut 'vod'")
+
+    # ====================== SAUVEGARDE DES RÉSULTATS (Live + Upcoming) ======================
     if video_results:
         operations = []
         
@@ -275,9 +300,8 @@ def main():
                 continue
 
             if video.get("status") == "live":
-                # On retire explicitement startTime du $set pour éviter le conflit
+                # Pour les lives : on préserve le startTime d'origine
                 set_data = {k: v for k, v in video.items() if k != "startTime"}
-
                 operations.append(
                     UpdateOne(
                         filter={"vidUrl": vid_url},
@@ -292,7 +316,7 @@ def main():
                     )
                 )
             else:
-                # Upcoming : mise à jour complète normale
+                # Upcoming ou futures VOD (déjà gérées plus haut)
                 operations.append(
                     UpdateOne(
                         filter={"vidUrl": vid_url},
@@ -301,18 +325,17 @@ def main():
                     )
                 )
 
-        # Exécution du bulk_write
         if operations:
-            try:
-                result = youtube_videos_collection.bulk_write(operations)
-                log_message(f"✅ {len(video_results)} vidéos traitées avec upsert "
-                           f"({result.upserted_count} créées | {result.modified_count} mises à jour)")
-            except Exception as bulk_error:
-                log_message(f"❌ Erreur pendant bulk_write: {bulk_error}")
-                # Affichage plus détaillé pour debug
-                print("BulkWriteError details:", str(bulk_error))
+            result = youtube_videos_collection.bulk_write(operations)
+            log_message(f"✅ {len(video_results)} vidéos traitées "
+                       f"({result.upserted_count} créées | {result.modified_count} mises à jour)")
 
-    # ====================== SAUVEGARDE DES STATS ======================
+    # ====================== SAUVEGARDE DES STATS FINALES ======================
+    execution_time = time.time() - start_time
+    final_peak_mb = get_current_peak_mb()
+    total_html_mb = total_html_size / (1024 * 1024)
+    current_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
     scraper_stats_collection.update_one(
         {"_id": "last_scraper_run"},
         {"$set": {
@@ -328,43 +351,19 @@ def main():
 
     upcoming_total = sum(1 for r in video_results if r.get("status") == "upcoming")
     live_total = sum(1 for r in video_results if r.get("status") == "live")
-
-    # ====================== CALCUL FINAL DU TEMPS ENTRE LES FINS ======================
-    time_between_ends_str = "Première exécution"
-    if stats and stats.get("timestamp"):
-        try:
-            prev_end_str = stats["timestamp"]
-            if prev_end_str.endswith('Z'):
-                prev_end_str = prev_end_str.replace('Z', '+00:00')
-            prev_end_time = datetime.fromisoformat(prev_end_str)
-            if prev_end_time.tzinfo is None:
-                prev_end_time = prev_end_time.replace(tzinfo=timezone.utc)
-            else:
-                prev_end_time = prev_end_time.astimezone(timezone.utc)
-
-            now_utc = datetime.now(timezone.utc)
-            delta = now_utc - prev_end_time
-            seconds_between = delta.total_seconds()
-
-            if seconds_between < 60:
-                time_between_ends_str = f"{int(seconds_between)} sec"
-            elif seconds_between < 3600:
-                time_between_ends_str = f"{seconds_between/60:.1f} min"
-            else:
-                time_between_ends_str = f"{seconds_between/3600:.1f} h"
-        except Exception as e:
-            time_between_ends_str = f"Erreur calcul ({type(e).__name__})"
+    vod_converted_this_run = converted_to_vod
 
     # ====================== LOGS FINAUX ======================
-    log_message(f"✅ {len(video_results)} YT Vids Saved (Upcoming: {upcoming_total} | Live: {live_total})")
+    log_message(f"✅ {len(video_results)} YT Vids Saved "
+               f"(Upcoming: {upcoming_total} | Live: {live_total} | VOD converted: {vod_converted_this_run})")
     log_message(f"🔥 Peak Ram : {final_peak_mb:.1f} MB")
     log_message(f"📦 Total Download : {total_html_mb:.2f} MB")
     log_message(f"⏱️ Scrap Time : {execution_time:.2f} s")
-    log_message(f"⏱️ Last Scrap : {time_between_ends_str} ago")
     log_message(f"📊 Workers : {max_workers}")
     log_message(f"=============== END YT Scrapping ===============")
     log_message("")
 
+    # Nettoyage mémoire
     del video_results
     gc.collect()
 
