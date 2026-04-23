@@ -597,10 +597,12 @@ function showNotificationError(message) {
 }
 
 function filterUpcomingStreams(query) {
-  const filteredStreams = currentUpcomingStreams.filter(stream =>
-    stream.chTitle.toLowerCase().includes(query.toLowerCase()) || 
-    stream.vidTitle.toLowerCase().includes(query.toLowerCase())
-  );
+  const nowSec = Date.now() / 1000;
+  const filteredStreams = currentUpcomingStreams.filter(stream => {
+    const startTime = parseInt(stream.startTime);
+    if (startTime < nowSec - 3600) return false; // Masquer si dépassé depuis + d'1h
+    return stream.chTitle.toLowerCase().includes(query.toLowerCase()) || stream.vidTitle.toLowerCase().includes(query.toLowerCase());
+  });
 
   const channelsList = document.getElementById('upcoming-channels-list');
   if (!channelsList) return;
@@ -638,35 +640,29 @@ async function updateUpcomingStreams() {
     console.error("Element with ID 'upcoming-channels-list' not found");
     return;
   }
-
   if (!token) {
     console.log("Aucun jeton YouTube, affichage du message d'erreur");
     channelsList.innerHTML = "";
     updateLogoutButtonVisibility();
     return;
   }
-
   try {
     const response = await fetch("/get-youtube-videos");
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(errorData.error || "Échec de la récupération des vidéos à venir");
     }
-
     const videos = await response.json();
-    currentUpcomingStreams = videos;
-
+    const nowSec = Date.now() / 1000;
+    currentUpcomingStreams = videos.filter(v => parseInt(v.startTime) >= nowSec - 3600);
     // Nettoyage + affichage des cartes
     channelsList.innerHTML = "";
-
-    videos.forEach(stream => {
+    currentUpcomingStreams.forEach(stream => {
       const card = createUpcomingCard(stream);
       channelsList.appendChild(card);
     });
-
     // ✅ Force la mise à jour des compteurs après l'ajout au DOM
     setTimeout(updateAllUpcomingCountdowns, 150);
-
   } catch (error) {
     console.error("Erreur lors de la récupération des vidéos à venir :", error);
     displayError("Erreur lors du chargement des vidéos à venir. Veuillez vous reconnecter.", "upcoming-channels-list");
@@ -692,7 +688,8 @@ async function getUpcomingVideos() {
     const videos = await response.json();
     console.log(`[${new Date().toISOString()}] 🔄 YT Vid : ${videos.length} (upcoming + live)`);
 
-    currentUpcomingStreams = videos;
+    const nowSec = Date.now() / 1000;
+    currentUpcomingStreams = videos.filter(v => parseInt(v.startTime) >= nowSec - 3600);
 
     // Mise à jour visuelle uniquement si l'onglet est actif
     if (document.getElementById("upcoming")?.classList.contains("active")) {
@@ -781,10 +778,16 @@ function createCountdown(timestamp, elementId, vidUrl, bellId) {
     }
 
     // Affichage compteur
-    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    const hours = Math.floor((diff % 86400000) / 3600000);
     const minutes = Math.floor((diff % 3600000) / 60000);
-    const seconds = Math.floor((diff % 60000) / 1000);
-    el.textContent = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+    if (days > 0) {
+      el.textContent = `${days}j ${hours}h ${minutes}min`;
+    } else if (hours > 0) {
+      el.textContent = `${hours}h ${minutes}min`;
+    } else {
+      el.textContent = `${minutes}min`;
+    }
 
     // ====================== AUTO LAUNCH ======================
     const container = el.closest('.item-container');
@@ -1207,9 +1210,13 @@ async function trySendBrowserNotification(stream) {
     }
 
     try {
+    const settingKey = `${stream.platform}_${stream.user_id || stream.userId}`;
+    const bellActive = notificationSettings.get(settingKey) || false;
+    if (bellActive) {
         const audio = new Audio("/sounds/tsar-bell.mp3");
         audio.volume = 0.2;
         audio.play().catch(() => {});
+    }
 
         const notification = new Notification(`[${stream.platform || 'Live'}] ${stream.user_name}`, {
             body: stream.title || "Stream en direct",
