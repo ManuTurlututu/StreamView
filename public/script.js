@@ -1123,7 +1123,7 @@ function listenToNotifications() {
           title: notification.title,
           avatar_url: notification.avatar_url,
           platform: notification.platform,
-          stream_url: notification.platform === 'youtube' ? notification.vidUrl : `https://www.twitch.tv/${notification.user_name?.toLowerCase()}`,
+          stream_url: notification.stream_url || (notification.platform === 'youtube' ? notification.vidUrl : `https://www.twitch.tv/${notification.user_name?.toLowerCase()}`),
           timestamp: notification.timestamp
         });
 
