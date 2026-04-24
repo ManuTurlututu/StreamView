@@ -18,6 +18,7 @@ let searchChannelsQuery = ""; // Added to replace searchFollowQuery and searchYo
 let searchNotificationsQuery = "";
 let searchUpcomingQuery = "";
 let notificationSettings = new Map();
+let autoLaunchSettings = new Map();
 let currentUpcomingStreams = [];
 let lastNotificationIds = new Set();
 let lastCheckTimestamp = Date.now();
@@ -309,8 +310,7 @@ async function getFollowedStreams() {
     return;
   }
   if (!token) {
-    console.log("Aucun jeton Twitch, affichage du message d'erreur");
-    channelsList.innerHTML = "";
+    console.log("Aucun jeton Twitch, affichage du message d'erreur");   
     updateLogoutButtonVisibility();
     return;
   }
@@ -348,8 +348,7 @@ async function getFollowedChannels() {
     return;
   }
   if (!token) {
-    console.log("Aucun jeton Twitch, affichage du message d'erreur");
-    channelsList.innerHTML = "";
+    console.log("Aucun jeton Twitch, affichage du message d'erreur");    
     updateLogoutButtonVisibility();
     return;
   }
@@ -423,8 +422,7 @@ async function getYoutubeChannels() {
     return;
   }
   if (!token) {
-    console.log("Aucun jeton YouTube, affichage du message d'erreur");
-    channelsList.innerHTML = "";
+    console.log("Aucun jeton YouTube, affichage du message d'erreur");    
     updateLogoutButtonVisibility();
     return;
   }
@@ -516,6 +514,35 @@ async function getUserProfiles(userIds, token) {
         "https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png";
       return acc;
     }, {});
+  }
+}
+
+async function getAutoLaunchSettings(userId) {
+  try {
+    const response = await fetch(`/get-autolaunch?userId=${userId}`);
+    if (!response.ok) throw new Error("Échec récupération autolaunch");
+    const data = await response.json();
+    autoLaunchSettings = new Map(data.map(item => [`${item.platform}_${item.channelId}`, item.autoLaunchEnabled]));
+    return autoLaunchSettings;
+  } catch (error) {
+    console.error("Erreur getAutoLaunchSettings:", error);
+    return new Map();
+  }
+}
+
+async function setAutoLaunchSetting(userId, platform, channelId, enabled) {
+  try {
+    const response = await fetch("/set-autolaunch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, platform, channelId, autoLaunchEnabled: enabled }),
+    });
+    if (!response.ok) throw new Error("Échec update autolaunch");
+    autoLaunchSettings.set(`${platform}_${channelId}`, enabled);
+    return true;
+  } catch (error) {
+    console.error("Erreur setAutoLaunchSetting:", error);
+    return false;
   }
 }
 
@@ -641,8 +668,7 @@ async function updateUpcomingStreams() {
     return;
   }
   if (!token) {
-    console.log("Aucun jeton YouTube, affichage du message d'erreur");
-    channelsList.innerHTML = "";
+    console.log("Aucun jeton YouTube, affichage du message d'erreur");    
     updateLogoutButtonVisibility();
     return;
   }
@@ -1101,6 +1127,15 @@ function listenToNotifications() {
           timestamp: notification.timestamp
         });
 
+        const alKey = `${notification.platform}_${notification.user_id}`;
+        if (autoLaunchSettings.get(alKey)) {
+          const url = notification.platform === 'youtube' 
+            ? (notification.vidUrl || notification.stream_url)
+            : `https://www.twitch.tv/${notification.user_name?.toLowerCase()}`;
+          console.log(`[AutoLaunch] Ouverture → ${url}`);
+          window.open(url, '_blank');
+        }       
+
         // Nettoyage du Set pour éviter la mémoire infinie
         if (lastNotificationIds.size > 1000) {
           lastNotificationIds = new Set([...lastNotificationIds].slice(-1000));
@@ -1395,7 +1430,8 @@ function createYoutubeLiveCard(stream, avatarUrl) {
 function createChannelCard(channel) {
   const settingKey = `${channel.platform}_${channel.id}`;
   const notificationsEnabled = notificationSettings.get(settingKey) || false;
-  //console.log(`Création de la carte pour la chaîne ${channel.id} (${channel.platform}), notifications activées: ${notificationsEnabled}`); // Log de débogage
+  const autoLaunchEnabled = autoLaunchSettings.get(settingKey) || false;
+
   const card = document.createElement("a");
   card.className = `channel-card ${channel.platform}-border ${notificationsEnabled ? "notifications-enabled" : ""}`;
   card.href = channel.url;
@@ -1409,43 +1445,57 @@ function createChannelCard(channel) {
       <p class="channel-title">${channel.title}</p>
       ${channel.subscriptionDate ? `<p class="subscription-date">Suivi le : ${formatTimestamp(channel.subscriptionDate)}</p>` : ""}
     </div>
+    <svg class="autolaunch-btn ${autoLaunchEnabled ? "active" : ""}" viewBox="0 0 24 24">
+      <rect x="2" y="2" width="20" height="20" rx="3" ry="3" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M9 7v10l8-5z"/>
+    </svg>
     <svg class="notification-bell ${notificationsEnabled ? "active" : ""}" viewBox="0 0 24 17">
       <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
     </svg>
   `;
 
+  // Cloche
   const bell = card.querySelector(".notification-bell");
-  let isProcessing = false; // Empêcher les clics multiples
+  let isProcessingBell = false;
   bell.addEventListener("click", async (e) => {
     e.preventDefault();
-    if (isProcessing) return; // Ignorer si une requête est en cours
-    isProcessing = true;
-
+    if (isProcessingBell) return;
+    isProcessingBell = true;
     const userId = await getUserId(currentTwitchToken || currentYoutubeToken) || "youtube_user";
-    if (!userId) {
-      showNotificationError("Utilisateur non connecté. Veuillez vous reconnecter.");
-      isProcessing = false;
-      return;
-    }
-
+    if (!userId) { showNotificationError("Utilisateur non connecté."); isProcessingBell = false; return; }
     const currentState = notificationSettings.get(settingKey) || false;
     const newState = !currentState;
-
-    // Mise à jour optimiste de l'UI
     card.classList.toggle("notifications-enabled", newState);
     bell.classList.toggle("active", newState);
-    console.log(`[${new Date().toISOString()}] Clic sur la cloche: ${settingKey} -> ${newState}`);
-
     const success = await setNotificationSetting(userId, channel.platform, channel.id, newState);
     if (!success) {
-      // Revertir l'état en cas d'échec
       notificationSettings.set(settingKey, currentState);
       card.classList.toggle("notifications-enabled", currentState);
       bell.classList.toggle("active", currentState);
-      showNotificationError("Échec de la mise à jour de la notification. Veuillez réessayer.");
+      showNotificationError("Échec de la mise à jour. Veuillez réessayer.");
     }
+    isProcessingBell = false;
+  });
 
-    isProcessing = false;
+  // AutoLaunch
+  const autoBtn = card.querySelector(".autolaunch-btn");
+  let isProcessingAuto = false;
+  autoBtn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    if (isProcessingAuto) return;
+    isProcessingAuto = true;
+    const userId = await getUserId(currentTwitchToken || currentYoutubeToken) || "youtube_user";
+    if (!userId) { showNotificationError("Utilisateur non connecté."); isProcessingAuto = false; return; }
+    const currentState = autoLaunchSettings.get(settingKey) || false;
+    const newState = !currentState;
+    autoBtn.classList.toggle("active", newState);
+    const success = await setAutoLaunchSetting(userId, channel.platform, channel.id, newState);
+    if (!success) {
+      autoLaunchSettings.set(settingKey, currentState);
+      autoBtn.classList.toggle("active", currentState);
+      showNotificationError("Échec de la mise à jour. Veuillez réessayer.");
+    }
+    isProcessingAuto = false;
   });
 
   return card;
@@ -1457,13 +1507,10 @@ async function displayChannels() {
     console.error("Element with ID 'followed-channels-list' not found");
     return;
   }
-  channelsList.innerHTML = '<div class="loader"></div>';
-
   const allChannels = [...currentFollowedChannels, ...currentYoutubeChannels];
+  if (allChannels.length === 0) return;
   const sortedChannels = sortChannels(allChannels, sortChannelsMode);
-
   reorderChannels(channelsList, sortedChannels, "id", (channel) => createChannelCard(channel));
-
   filterChannels();
 }
 
@@ -1472,7 +1519,9 @@ async function init() {
   // Charger les paramètres de notification en premier pour s'assurer qu'ils sont disponibles
   const userId = await getUserId(await getTwitchAccessToken() || await getYoutubeAccessToken() || "youtube_user");
   if (userId) {
-    await getNotificationSettings(userId);
+    await getAutoLaunchSettings(userId);   
+    console.log('Paramètres autolaunch chargés:', Array.from(autoLaunchSettings.entries()));
+    await getNotificationSettings(userId);    
     console.log('Paramètres de notification chargés:', Array.from(notificationSettings.entries()));
   } else {
     console.error("Impossible de récupérer l'ID utilisateur pour les notifications");
