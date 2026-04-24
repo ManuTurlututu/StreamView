@@ -44,7 +44,6 @@ app.use(express.json());
 const clientId = process.env.TWITCH_CLIENT_ID;
 const clientSecret = process.env.TWITCH_CLIENT_SECRET;
 const redirectUri = process.env.TWITCH_REDIRECT_URI;
-const scope = "user:read:follows";
 
 const youtubeClientId = process.env.YOUTUBE_CLIENT_ID;
 const youtubeClientSecret = process.env.YOUTUBE_CLIENT_SECRET;
@@ -87,6 +86,16 @@ const notificationSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Notification = mongoose.model('Notification', notificationSchema);
+
+// Schéma pour l'autolaunch
+const channelsAutoLaunchSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  platform: { type: String, required: true, enum: ['twitch', 'youtube'] },
+  channelId: { type: String, required: true },
+  autoLaunchEnabled: { type: Boolean, required: true, default: false },
+}, { collection: 'ChannelsAutoLaunch', timestamps: true });
+
+const ChannelsAutoLaunch = mongoose.model('ChannelsAutoLaunch', channelsAutoLaunchSchema);
 
 // Schéma pour les chaînes YouTube
 const youtubeChannelSchema = new mongoose.Schema({
@@ -1101,6 +1110,48 @@ app.post("/set-notification", async (req, res) => {
   } catch (error) {
     console.error(`[${new Date().toISOString()}]❌ Erreur lors de la mise à jour des paramètres de notification:`, error.message);
     res.status(500).json({ error: "❌ Erreur serveur lors de la mise à jour des notifications" });
+  }
+});
+
+// Endpoint pour récupérer les paramètres d'autolaunch
+app.get("/get-autolaunch", async (req, res) => {
+  const userId = req.query.userId;
+  if (!userId) return res.status(400).json({ error: "userId manquant" });
+
+  try {
+    const settings = await ChannelsAutoLaunch.find({ userId });
+    const formatted = settings.map(s => ({
+      platform: s.platform,
+      channelId: s.channelId,
+      autoLaunchEnabled: s.autoLaunchEnabled
+    }));
+    console.log(`[${new Date().toISOString()}] AutoLaunch settings: ${formatted.length}`);
+    res.json(formatted);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}]❌ Erreur get-autolaunch:`, error.message);
+    res.status(500).json({ error: "❌ Erreur serveur" });
+  }
+});
+
+// Endpoint pour mettre à jour les paramètres d'autolaunch
+app.post("/set-autolaunch", async (req, res) => {
+  const { userId, platform, channelId, autoLaunchEnabled } = req.body;
+
+  if (!userId || !platform || !channelId || typeof autoLaunchEnabled !== "boolean") {
+    return res.status(400).json({ error: "❌ Paramètres manquants ou invalides" });
+  }
+
+  try {
+    await ChannelsAutoLaunch.updateOne(
+      { userId, platform, channelId },
+      { $set: { autoLaunchEnabled } },
+      { upsert: true }
+    );
+    console.log(`[${new Date().toISOString()}] AutoLaunch updated: ${platform}_${channelId} → ${autoLaunchEnabled}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}]❌ Erreur set-autolaunch:`, error.message);
+    res.status(500).json({ error: "❌ Erreur serveur" });
   }
 });
 
