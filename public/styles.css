@@ -296,6 +296,23 @@ body {
   fill: #ffd700;
 }
 
+.channel-card .autolaunch-btn {
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  fill: #efeff1;
+  transition: fill 0.2s;
+  position: absolute;
+  right: 42px;
+  top: 55%;
+  transform: translateY(-50%);
+}
+
+.channel-card .autolaunch-btn.active {
+  fill: #00e676;
+  color: #00e676;
+}
+
 /* ====================== NOTIFICATIONS VOLANTES (top-right) ====================== */
 .notifications-container {
   position: fixed;
