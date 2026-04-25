@@ -121,6 +121,8 @@ def process_url(channel_data, session, access_token):
             thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', segment_before, re.DOTALL)
             if thumbnail_search:
                 video_thumbnail = thumbnail_search.group(1)
+                if video_thumbnail:
+                    video_thumbnail = video_thumbnail.split(r'\u0026')[0].split('&')[0].split('?')[0]
 
             video_id_search = re.search(r'"videoId":"([A-Za-z0-9_-]+)"', segment_vid, re.DOTALL)
             if video_id_search:
@@ -155,6 +157,8 @@ def process_url(channel_data, session, access_token):
             thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', search_range, re.DOTALL)
             if thumbnail_search:
                 video_thumbnail = thumbnail_search.group(1)
+                if video_thumbnail:
+                    video_thumbnail = video_thumbnail.split(r'\u0026')[0].split('&')[0].split('?')[0]
 
             video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]+)"', search_range)
             if video_ids:
@@ -260,6 +264,12 @@ def main():
                 video_results.extend(result)
                 time.sleep(0.07)
 
+    if not video_results:
+        log_message("❌ Scrapping Failed, DB not updated (anti-flush)")
+        log_message(f"=============== END YT Scrapping ===============")
+        log_message("")       
+        return
+
     # ====================== GESTION INTELLIGENTE DES STATUTS (LIVE → VOD) ======================
     log_message("🔄 Mise à jour des statuts Live → VOD...")
 
@@ -291,44 +301,44 @@ def main():
         log_message(f"✅ {converted_to_vod} live(s) terminé(s) → passés en statut 'vod'")
 
     # ====================== SAUVEGARDE DES RÉSULTATS (Live + Upcoming) ======================
-    if video_results:
-        operations = []
-        
-        for video in video_results:
-            vid_url = video.get("vidUrl")
-            if not vid_url:
-                continue
 
-            if video.get("status") == "live":
-                # Pour les lives : on préserve le startTime d'origine
-                set_data = {k: v for k, v in video.items() if k != "startTime"}
-                operations.append(
-                    UpdateOne(
-                        filter={"vidUrl": vid_url},
-                        update={
-                            "$set": set_data,
-                            "$setOnInsert": {
-                                "startTime": str(int(time.time())),
-                                "firstDetectedAt": datetime.now(timezone.utc).isoformat()
-                            }
-                        },
-                        upsert=True
-                    )
-                )
-            else:
-                # Upcoming ou futures VOD (déjà gérées plus haut)
-                operations.append(
-                    UpdateOne(
-                        filter={"vidUrl": vid_url},
-                        update={"$set": video},
-                        upsert=True
-                    )
-                )
+    operations = []
+    
+    for video in video_results:
+        vid_url = video.get("vidUrl")
+        if not vid_url:
+            continue
 
-        if operations:
-            result = youtube_videos_collection.bulk_write(operations)
-            log_message(f"✅ {len(video_results)} vidéos traitées "
-                       f"({result.upserted_count} créées | {result.modified_count} mises à jour)")
+        if video.get("status") == "live":
+            # Pour les lives : on préserve le startTime d'origine
+            set_data = {k: v for k, v in video.items() if k != "startTime"}
+            operations.append(
+                UpdateOne(
+                    filter={"vidUrl": vid_url},
+                    update={
+                        "$set": set_data,
+                        "$setOnInsert": {
+                            "startTime": str(int(time.time())),
+                            "firstDetectedAt": datetime.now(timezone.utc).isoformat()
+                        }
+                    },
+                    upsert=True
+                )
+            )
+        else:
+            # Upcoming ou futures VOD (déjà gérées plus haut)
+            operations.append(
+                UpdateOne(
+                    filter={"vidUrl": vid_url},
+                    update={"$set": video},
+                    upsert=True
+                )
+            )
+
+    if operations:
+        result = youtube_videos_collection.bulk_write(operations)
+        log_message(f"✅ {len(video_results)} vidéos traitées "
+                    f"({result.upserted_count} créées | {result.modified_count} mises à jour)")
 
     # ====================== SAUVEGARDE DES STATS FINALES ======================
     execution_time = time.time() - start_time
