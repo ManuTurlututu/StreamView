@@ -8,9 +8,9 @@ let currentStreams = [];
 let currentFollowedChannels = [];
 let currentYoutubeChannels = [];
 let notificationLog = [];
-let sortMode = "viewers";
-let sortChannelsMode = "date"; // Added to fix ReferenceError
-let sortUpcomingMode = "date";
+let sortMode = localStorage.getItem('sortMode') || "viewers";
+let sortChannelsMode = localStorage.getItem('sortChannelsMode') || "date";
+let platformFilter = localStorage.getItem('platformFilter') || "all";
 let durationAnimationFrame = null;
 let lastDurationUpdate = 0;
 let searchLiveQuery = "";
@@ -40,6 +40,30 @@ function formatViewers(count) {
     return (count / 1000).toFixed(1).replace(".0", "") + " k";
   }
   return count.toString();
+}
+
+function updateSyncStatus() {
+  fetch('/sync-status')
+    .then(r => r.json())
+    .then(data => {
+      const now = Date.now();
+      const fmt = (ts) => {
+        if (!ts) return '--';
+        const diff = Math.floor((now - new Date(ts).getTime()) / 60000);
+        return `${diff}min`;
+      };
+      const ytMin = data.yt ? Math.floor((now - new Date(data.yt).getTime()) / 60000) : 999;
+      const twMin = data.twitch ? Math.floor((now - new Date(data.twitch).getTime()) / 60000) : 999;
+      document.getElementById('yt-sync-label').textContent = `YT : ${fmt(data.yt)}`;
+      document.getElementById('tw-sync-label').textContent = `TW : ${fmt(data.twitch)}`;
+      const bar = document.getElementById('sync-status-bar');
+      bar.classList.toggle('stale', ytMin >= 5 || twMin >= 5);
+      const fmtFull = (ts) => {
+        if (!ts) return 'jamais';
+        return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      };
+    })
+    .catch(() => {});
 }
 
 function displayError(message, listId) {
@@ -118,8 +142,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // === LIVE TAB ===
   const sortSelector = document.getElementById("sort-selector");
   if (sortSelector) {
+    sortSelector.value = sortMode; // ← restaure le visuel
     sortSelector.addEventListener("change", (event) => {
       sortMode = event.target.value;
+      localStorage.setItem('sortMode', sortMode);
       const channelsList = document.getElementById("channels-list");
       if (channelsList && currentStreams.length > 0) {
         const sorted = sortStreams([...currentStreams], sortMode);
@@ -134,7 +160,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const platformSelector = document.getElementById("platform-selector");
+  if (platformSelector) {
+    platformSelector.value = platformFilter;
+    platformSelector.addEventListener("change", (event) => {
+      platformFilter = event.target.value;
+      localStorage.setItem('platformFilter', platformFilter);
+      filterStreams();
+    });
+  }
+
   const searchLiveInput = document.getElementById("search-live");
+  if (searchLiveInput) searchLiveInput.value = "";
   if (searchLiveInput) {
     searchLiveInput.addEventListener("input", (e) => {
       searchLiveQuery = e.target.value;
@@ -143,21 +180,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // === UPCOMING TAB ===
-  const sortUpcomingSelector = document.getElementById("sort-upcoming-selector");
-  if (sortUpcomingSelector) {
-    sortUpcomingSelector.addEventListener("change", (event) => {
-      sortUpcomingMode = event.target.value;
-      const list = document.getElementById("upcoming-channels-list");
-      if (list && currentUpcomingStreams.length > 0) {
-        const sorted = sortUpcomingStreams([...currentUpcomingStreams], sortUpcomingMode);
-        reorderChannels(list, sorted, "vidUrl", createUpcomingCard);
-        currentUpcomingStreams = sorted;
-      }
-      filterUpcomingStreams(searchUpcomingQuery);
-    });
-  }
-
+  
   const searchUpcomingInput = document.getElementById("search-upcoming");
+  if (searchUpcomingInput) searchUpcomingInput.value = "";
   if (searchUpcomingInput) {
     searchUpcomingInput.addEventListener("input", (e) => {
       searchUpcomingQuery = e.target.value;
@@ -168,13 +193,16 @@ document.addEventListener("DOMContentLoaded", () => {
   // === CHANNELS TAB ===
   const sortChannelsSelector = document.getElementById("sort-channels-selector");
   if (sortChannelsSelector) {
+    sortChannelsSelector.value = sortChannelsMode; // ← restaure le visuel
     sortChannelsSelector.addEventListener("change", (event) => {
       sortChannelsMode = event.target.value;
+      localStorage.setItem('sortChannelsMode', sortChannelsMode);
       displayChannels();
     });
   }
 
   const searchChannelsInput = document.getElementById("search-channels");
+  if (searchChannelsInput) searchChannelsInput.value = "";
   if (searchChannelsInput) {
     searchChannelsInput.addEventListener("input", (e) => {
       searchChannelsQuery = e.target.value;
@@ -184,6 +212,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // === NOTIFICATIONS TAB ===
   const searchNotificationsInput = document.getElementById("search-notifications");
+  if (searchNotificationsInput) searchNotificationsInput.value = "";
   if (searchNotificationsInput) {
     searchNotificationsInput.addEventListener("input", (e) => {
       searchNotificationsQuery = e.target.value;
@@ -748,28 +777,34 @@ function createUpcomingCard(stream) {
   const bellClass = isBellActive ? 'bell-button yellow' : 'bell-button';
   const containerClass = isLive ? 'red-border' : (isBellActive ? 'yellow-border' : '');
 
+  const truncatedChannelName = truncateText(stream.chTitle, 25);
+  const truncatedTitle = truncateText(stream.vidTitle, 80);
+  const safeChTitle = stream.chTitle.replace(/"/g, '&quot;');
+  const safeVidTitle = stream.vidTitle.replace(/"/g, '&quot;');
+
   const card = document.createElement("div");
-  card.className = `item-container ${containerClass}`;
+  card.className = `item-container youtube-border ${containerClass}`;
   card.innerHTML = `
     <div class="header-row">
       <a href="${stream.chUrl}" target="_blank">
-        <img src="${stream.chThumbnail}" alt="${stream.chTitle}" class="channel-img">
+        <img src="${stream.chThumbnail}" alt="${safeChTitle}" class="channel-img">
       </a>
-      <div class="schedule-info">
-        <p class="text-gray-300 font-bold">${formatDate(stream.startTime)}</p>
-        <p id="${countdownId}" class="text-blue-400 font-bold">${isLive ? 'Pending...' : ''}</p>
-        <div id="${bellId}" class="${bellClass}" onclick="toggleBellColor('${bellId}', '${stream.chTitle}', '${stream.startTime}')">
-          <svg viewBox="0 0 24 24">
-            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"/>
-          </svg>
-        </div>
+      <div class="upcoming-channel-info">
+        <p class="upcoming-channel-title" title="${safeChTitle}">${truncatedChannelName}</p>
+        <p class="upcoming-countdown">
+          <span id="${countdownId}" class="text-blue-400 font-bold">${isLive ? 'Pending...' : ''}</span>
+        </p>
       </div>
+      </div>
+    <div id="${bellId}" class="upcoming-bell ${isBellActive ? 'yellow' : ''}" onclick="toggleBellColor('${bellId}', '${safeChTitle}', '${stream.startTime}')">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z"/>
+      </svg>
     </div>
-    <p class="text-gray-300 font-bold">${stream.chTitle}</p>
     <a href="${stream.vidUrl}" target="_blank">
-      <img src="${stream.vidThumbnail}" alt="${stream.vidTitle}" class="thumbnail mb-2">
+      <img src="${stream.vidThumbnail}" alt="${safeVidTitle}" class="thumbnail">
     </a>
-    <a href="${stream.vidUrl}" target="_blank" class="text-gray-300 hover:text-blue-400">${stream.vidTitle}</a>
+    <p class="stream-title" title="${safeVidTitle}">${truncatedTitle}</p>
   `;
   if (!isLive) {
     createCountdown(stream.startTime, countdownId, stream.vidUrl, bellId);
@@ -796,12 +831,6 @@ function createCountdown(timestamp, elementId, vidUrl, bellId) {
     if (!el) return;
 
     const diff = targetTime - Date.now();
-
-    if (diff <= 0) {
-      el.textContent = "EN DIRECT !";
-      el.classList.add("text-red-500", "font-bold");
-      return;
-    }
 
     // Affichage compteur
     const days = Math.floor(diff / 86400000);
@@ -907,8 +936,9 @@ function formatStreamDuration(startedAt) {
 function createNotificationCard(notification) {
   const truncatedTitle = truncateText(notification.title || '', 85);
   const truncatedChannelName = truncateText(notification.user_name || 'Utilisateur inconnu', 22);
+  const safeTitle = (notification.title || '').replace(/"/g, '&quot;');
+  const safeUserName = (notification.user_name || '').replace(/"/g, '&quot;');
 
-  // Détermination du lien correct
   let link = "#";
   if (notification.platform === "youtube") {
     link = notification.vidUrl || notification.stream_url || "#";
@@ -930,22 +960,22 @@ function createNotificationCard(notification) {
   const thumbnailUrl = notification.thumbnail_url || 
     (notification.platform === "twitch" 
       ? 'https://static-cdn.jtvnw.net/ttv-static/404_preview-1280x720.jpg' 
-      : 'https://i.ytimg.com/vi/default.jpg'); // fallback si pas de thumbnail dans la notif
+      : 'https://i.ytimg.com/vi/default.jpg');
 
   card.innerHTML = `
     <div class="header-row">
       <a href="${link}" target="_blank" style="position: relative;">
-        <img src="${avatarUrl}" alt="${notification.user_name}" class="channel-img">
+        <img src="${avatarUrl}" alt="${safeUserName}" class="channel-img">
       </a>
       <div class="channel-info">
-        <p class="channel-title" title="${notification.user_name}">${truncatedChannelName}</p>
+        <p class="channel-title" title="${safeUserName}">${truncatedChannelName}</p>
         <p class="notification-timestamp">${formatTimestamp(notification.timestamp)}</p>
       </div>
     </div>
     <a href="${link}" target="_blank">
-      <img src="${thumbnailUrl}" alt="${truncatedTitle}" class="thumbnail">
+      <img src="${thumbnailUrl}" alt="${safeTitle}" class="thumbnail">
     </a>
-    <p class="stream-title" title="${notification.title || 'Aucun titre'}">${truncatedTitle}</p>
+    <p class="stream-title" title="${safeTitle}">${truncatedTitle}</p>
   `;
 
   return card;
@@ -1011,7 +1041,16 @@ function filterStreams() {
   const cards = channelsList.querySelectorAll(".item-container");
   cards.forEach((card) => {
     const channelName = card.querySelector(".channel-title")?.getAttribute('title')?.toLowerCase() || '';
-    card.style.display = searchLiveQuery && !channelName.includes(searchLiveQuery.toLowerCase()) ? "none" : "block";
+    const gameTitle   = card.querySelector(".game-title")?.getAttribute('title')?.toLowerCase() || '';
+    const streamTitle = card.querySelector(".stream-title")?.getAttribute('title')?.toLowerCase() || '';
+    const platform    = card.classList.contains('twitch-border') ? 'twitch' : 'youtube';
+    const query = searchLiveQuery.toLowerCase();
+    const matchesSearch = !searchLiveQuery ||
+      channelName.includes(query) ||
+      gameTitle.includes(query) ||
+      streamTitle.includes(query);
+    const matchesPlatform = platformFilter === 'all' || platform === platformFilter;
+    card.style.display = matchesSearch && matchesPlatform ? "block" : "none";
   });
 }
 
@@ -1378,25 +1417,28 @@ function createTwitchLiveCard(stream, avatarUrl) {
   const truncatedTitle = truncateText(stream.title, 85);
   const truncatedChannelName = truncateText(stream.user_name, 17);
   const truncatedGameName = truncateText(stream.game_name, 22);
+  const safeTitle = (stream.title || '').replace(/"/g, '&quot;');
+  const safeUserName = (stream.user_name || '').replace(/"/g, '&quot;');
+  const safeGameName = (stream.game_name || '').replace(/"/g, '&quot;');
   const card = document.createElement("div");
   card.className = `item-container twitch-border`;
   card.setAttribute('data-user-id', stream.user_id);
   card.innerHTML = `
     <div class="header-row">
       <a href="https://www.twitch.tv/${stream.user_name.toLowerCase()}" target="_blank">
-        <img src="${stream.avatar_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png'}" alt="${stream.user_name}" class="channel-img">
+        <img src="${stream.avatar_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png'}" alt="${safeUserName}" class="channel-img">
       </a>
       <div class="channel-info">
-        <p class="channel-title" title="${stream.user_name}">${truncatedChannelName}</p>
+        <p class="channel-title" title="${safeUserName}">${truncatedChannelName}</p>
         <p class="viewer-count">${formatViewers(stream.viewer_count)}</p>
-        <p class="game-title" title="${stream.game_name || ''}">${truncatedGameName || ''}</p>
+        <p class="game-title" title="${safeGameName}">${truncatedGameName || ''}</p>
         <p class="stream-duration">Démarré il y a <span class="duration-time" data-started-at="${stream.started_at}"></span></p>
       </div>
     </div>
     <a href="https://www.twitch.tv/${stream.user_name.toLowerCase()}" target="_blank">
-      <img src="${stream.thumbnail_url ? stream.thumbnail_url.replace('{width}', '1280').replace('{height}', '720') : 'https://static-cdn.jtvnw.net/ttv-static/404_preview-1280x720.jpg'}" alt="${stream.user_name} thumbnail" class="thumbnail">
+      <img src="${stream.thumbnail_url ? stream.thumbnail_url.replace('{width}', '1280').replace('{height}', '720') : 'https://static-cdn.jtvnw.net/ttv-static/404_preview-1280x720.jpg'}" alt="${safeUserName} thumbnail" class="thumbnail">
     </a>
-    <p class="stream-title" title="${stream.title || 'Aucun titre'}">${truncatedTitle}</p>
+    <p class="stream-title" title="${safeTitle}">${truncatedTitle}</p>
   `;
   return card;
 }
@@ -1404,25 +1446,27 @@ function createTwitchLiveCard(stream, avatarUrl) {
 function createYoutubeLiveCard(stream, avatarUrl) {
   const truncatedTitle = truncateText(stream.title, 85);
   const truncatedChannelName = truncateText(stream.user_name, 17);
+  const safeTitle = (stream.title || '').replace(/"/g, '&quot;');
+  const safeUserName = (stream.user_name || '').replace(/"/g, '&quot;');
   const card = document.createElement("div");
   card.className = `item-container youtube-border`;
   card.setAttribute('data-user-id', stream.user_id);
   card.innerHTML = `
     <div class="header-row">
       <a href="${stream.stream_url}" target="_blank">
-        <img src="${stream.avatar_url || 'https://yt3.ggpht.com/ytc/default-channel-img.jpg'}" alt="${stream.user_name}" class="channel-img">
+        <img src="${stream.avatar_url || 'https://yt3.ggpht.com/ytc/default-channel-img.jpg'}" alt="${safeUserName}" class="channel-img">
       </a>
       <div class="channel-info">
-        <p class="channel-title" title="${stream.user_name}">${truncatedChannelName}</p>
+        <p class="channel-title" title="${safeUserName}">${truncatedChannelName}</p>
         <p class="viewer-count">${formatViewers(stream.viewer_count)}</p>
         <p class="game-title" title="">&nbsp;</p>
         <p class="stream-duration">Démarré il y a <span class="duration-time" data-started-at="${stream.started_at}"></span></p>
       </div>
     </div>
     <a href="${stream.stream_url}" target="_blank">
-      <img src="${stream.thumbnail_url || 'https://i.ytimg.com/vi/default.jpg'}" alt="${stream.title} thumbnail" class="thumbnail">
+      <img src="${stream.thumbnail_url || 'https://i.ytimg.com/vi/default.jpg'}" alt="${safeTitle} thumbnail" class="thumbnail">
     </a>
-    <p class="stream-title" title="${stream.title || 'Aucun titre'}">${truncatedTitle}</p>
+    <p class="stream-title" title="${safeTitle}">${truncatedTitle}</p>
   `;
   return card;
 }
@@ -1535,10 +1579,12 @@ async function init() {
   ]);
   // Initialiser le flux SSE pour les notifications
   listenToNotifications();
+  updateSyncStatus();
   setInterval(getFollowedStreams, 60000);
   setInterval(getFollowedChannels, 60 * 60 * 1000);
   setInterval(getYoutubeChannels, 60 * 60 * 1000);
   setInterval(getUpcomingVideos, 60000);
+  setInterval(updateSyncStatus, 60000);
 }
 
 init();
