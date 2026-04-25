@@ -302,10 +302,7 @@ async function syncYoutubeLiveVideos() {
         notificationsEnabled: true
       });
 
-      if (!bellEnabled) {
-        console.log(`[${new Date().toISOString()}]🔕 Notif ignorée (cloche inactive) : ${video.user_name}`);
-        continue;
-      }
+      console.log(`[${new Date().toISOString()}]${bellEnabled ? '🔔' : '🔕'} Notif (cloche ${bellEnabled ? 'active' : 'inactive'}) : ${video.user_name}`);
 
       const notification = {
         id: `youtube-${video.user_id}-${Date.now()}`,
@@ -313,8 +310,8 @@ async function syncYoutubeLiveVideos() {
         user_name: video.user_name,
         title: video.title,
         avatar_url: video.avatar_url,
-        platform: 'youtube',      // FIX 3 : platform maintenant sauvegardé en BDD
-        stream_url: video.stream_url,  // FIX 3 : stream_url au lieu de vidUrl
+        platform: 'youtube',
+        stream_url: video.stream_url,
         timestamp: Date.now()
       };
       await saveNotificationLog(notification);
@@ -416,7 +413,7 @@ async function syncTwitchLiveStreams() {
       console.log(`[${new Date().toISOString()}]🔴 New Twitch Live(${newStreams.length}) : `, newStreams.map(s => s.user_name));
     }
 
-    // FIX : vérification cloche + stream_url inclus
+    //vérification cloche + stream_url inclus
     for (const stream of newStreams) {
       const bellEnabled = await ChannelsBells.findOne({
         platform: 'twitch',
@@ -424,10 +421,7 @@ async function syncTwitchLiveStreams() {
         notificationsEnabled: true
       });
 
-      if (!bellEnabled) {
-        console.log(`[${new Date().toISOString()}]🔕 Notif ignorée (cloche inactive) : ${stream.user_name}`);
-        continue;
-      }
+      console.log(`[${new Date().toISOString()}]${bellEnabled ? '🔔' : '🔕'} Notif (cloche ${bellEnabled ? 'active' : 'inactive'}) : ${stream.user_name}`);
 
       const notification = {
         id: `twitch-${stream.user_id}-${Date.now()}`,
@@ -436,7 +430,7 @@ async function syncTwitchLiveStreams() {
         title: stream.title,
         avatar_url: stream.avatar_url,
         platform: 'twitch',
-        stream_url: stream.stream_url,  // FIX : stream_url ajouté
+        stream_url: stream.stream_url,
         timestamp: Date.now()
       };
       await saveNotificationLog(notification);
