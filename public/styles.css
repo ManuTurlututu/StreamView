@@ -60,6 +60,53 @@ body {
 .tab svg.notification-icon { width: 24px; height: 24px; }
 .tab svg.settings-icon { width: 21px; height: 21px; margin-top: 1px; fill: white; }
 
+#sync-status-bar {
+  margin-left: auto;
+  align-self: center;
+  margin-bottom: 4px;
+  margin-right: 4px;
+  padding: 7px 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: default;
+  line-height: 1;
+  border-radius: 8px;
+  border: 1.5px solid rgba(0, 0, 0, 0.6);
+  background-color: #2d7a3a;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  transition: background-color 0.4s ease;
+  position: relative;
+}
+
+#sync-status-bar.stale {
+  background-color: #8b1a1a;
+}
+
+/* ====================== CLOCHE UPCOMING ====================== */
+.upcoming-bell {
+  cursor: pointer;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  align-self: center;
+  margin-right: -40px;
+  margin-top: -32px;
+}
+
+.upcoming-bell svg {
+  width: 100%;
+  height: 100%;
+  fill: #ffffff;
+  transition: fill 0.3s ease;
+}
+
+.upcoming-bell.yellow svg {
+  fill: #ffff00;
+}
+
 /* Contenu des onglets */
 .tab-content {
   display: none;
@@ -112,6 +159,38 @@ body {
 .notification-card:hover {
   transform: translateY(-3px);
   box-shadow: 0 8px 20px rgba(167, 112, 255, 0.2);
+}
+
+/* ====================== UPCOMING CARDS ====================== */
+.upcoming-channel-info {
+  margin-top: -18px;
+  margin-right: 0px;
+  z-index: 10;
+}
+
+.upcoming-channel-title {
+  font-family: 'Lora', serif;
+  font-size: 24px;
+  font-weight: 700;
+  text-align: right;
+  color: #efeff1;
+  margin: 0 -12px;
+  text-shadow: 
+    -1px -1px 0 #000,  
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+
+.upcoming-countdown {
+  text-align: right;
+  font-size: 16px;
+  color: #adadb8;
+  margin: 0 -6px;
 }
 
 /* Bordures par plateforme */
@@ -182,13 +261,14 @@ body {
 .thumbnail {
   transition: transform 0.3s;
   width: 280px;
-  height: auto;
+  height: 157px;
   object-fit: cover;
   aspect-ratio: 16/9;
   border-radius: 15px;
   margin: 0 -5px;
   display: block;
   z-index: 5;
+  flex-shrink: 0;
 }
 
 .thumbnail:hover {
