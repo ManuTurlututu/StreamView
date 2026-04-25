@@ -17,7 +17,7 @@ const cors = require('cors');
 
 // ==================== DÉTECTION MODE (Local vs Serveur) ====================
 const isLocal = process.env.NODE_ENV !== 'production' || process.env.IS_LOCAL === 'true';
-const APP_URL = process.env.APP_URL || (isLocal ? 'https://streamview0.loca.lt' : 'https://your-app.onrender.com');
+const APP_URL = process.env.APP_URL || (isLocal ? 'https://nonnebular-lynwood-fraudulently.ngrok-free.dev/' : 'https://your-app.onrender.com');
 console.log(`[${new Date().toISOString()}] ================ 🚀 SERVEUR LAUNCH ================`);
 console.log(`[${new Date().toISOString()}] 🚀 SERVEUR LAUNCH → ${isLocal ? 'LOCAL (Vite + loca.lt)' : 'RENDER (Online)'}`);
 
@@ -31,7 +31,7 @@ console.log(`[${new Date().toISOString()}] ================ 🚀 SERVEUR LAUNCH 
 
 // Middleware
 app.use(cors({
-  origin: isLocal ? 'https://streamview0.loca.lt' : true,   // true = tout autoriser en prod
+  origin: isLocal ? 'https://nonnebular-lynwood-fraudulently.ngrok-free.dev/' : true,   // true = tout autoriser en prod
   methods: ['GET', 'POST'],
   credentials: true
 }));
@@ -44,7 +44,7 @@ app.use(express.json());
 const clientId = process.env.TWITCH_CLIENT_ID;
 const clientSecret = process.env.TWITCH_CLIENT_SECRET;
 const redirectUri = process.env.TWITCH_REDIRECT_URI;
-
+const scope = "user:read:follows user:read:email";
 const youtubeClientId = process.env.YOUTUBE_CLIENT_ID;
 const youtubeClientSecret = process.env.YOUTUBE_CLIENT_SECRET;
 const youtubeRedirectUri = process.env.YOUTUBE_REDIRECT_URI;
@@ -447,6 +447,14 @@ async function syncTwitchLiveStreams() {
     } else {
       console.log(`[${new Date().toISOString()}] Aucun stream Twitch en direct à sauvegarder`);
     }
+
+    // Toujours mis à jour si on arrive jusqu'ici sans exception
+    const db = mongoose.connection.db;
+    await db.collection('scraperStats').updateOne(
+      { _id: "last_twitch_sync" },
+      { $set: { timestamp: new Date().toISOString() } },
+      { upsert: true }
+    );
 
     await Live.deleteMany({
       platform: 'twitch',
@@ -948,7 +956,6 @@ async function getYoutubeSubscriptions(accessToken) {
 }
 
 // Fonction pour exécuter le script Python
-// Fonction pour exécuter le script Python
 async function runPythonScript(accessToken, retryCount = 0) {
     const maxRetries = 1;
     if (!accessToken) {
@@ -1227,6 +1234,23 @@ app.post("/set-autolaunch", async (req, res) => {
   } catch (error) {
     console.error(`[${new Date().toISOString()}]❌ Erreur set-autolaunch:`, error.message);
     res.status(500).json({ error: "❌ Erreur serveur" });
+  }
+});
+
+// Endpoint pour recup last platform synch
+app.get("/sync-status", async (req, res) => {
+  try {
+    const db = mongoose.connection.db;
+    const [ytStats, twStats] = await Promise.all([
+      db.collection('scraperStats').findOne({ _id: "last_scraper_run" }),
+      db.collection('scraperStats').findOne({ _id: "last_twitch_sync" })
+    ]);
+    res.json({
+      yt: ytStats?.timestamp || null,
+      twitch: twStats?.timestamp || null
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
