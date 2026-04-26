@@ -73,118 +73,129 @@ def process_url(channel_data, session, access_token):
 
     url = f"https://www.youtube.com/channel/{channel_id}/streams?gl=US&hl=en"
 
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://www.youtube.com/",
-            "Authorization": f"Bearer {access_token}",
-        }
-        cookies = {
-            "CONSENT": "YES+cb.20250403-00-p0.fr+FX+123",
-            "SOCS": "CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjUwNjAzLjAzX3AwGgJmciACGgYIgJn-wQY",
-        }
+    for attempt in range(2):
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://www.youtube.com/",
+                "Authorization": f"Bearer {access_token}",
+            }
+            cookies = {
+                "CONSENT": "YES+cb.20250403-00-p0.fr+FX+123",
+                "SOCS": "CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjUwNjAzLjAzX3AwGgJmciACGgYIgJn-wQY",
+            }
 
-        response = session.get(url, headers=headers, cookies=cookies, timeout=25)
-        response.raise_for_status()
-        html_content = response.text
-        total_html_size += len(html_content)
+            response = session.get(url, headers=headers, cookies=cookies, timeout=40)
+            response.raise_for_status()
+            html_content = response.text
+            total_html_size += len(html_content)
 
-        if any(x in html_content.lower() for x in ["consent.youtube.com", "avant d'accéder", "before you continue"]):
-            return results
+            if any(x in html_content.lower() for x in ["consent.youtube.com", "avant d'accéder", "before you continue"]):
+                return results
 
-        # ==================== UPCOMING ====================
-        upcoming_matches = [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]
-        for upcoming_pos in upcoming_matches:
-            start_time_match = re.search(r'"startTime":"(\d+)"', html_content[upcoming_pos:upcoming_pos + 1000])
-            if not start_time_match:
-                continue
-            start_time = start_time_match.group(1)
+            # ==================== UPCOMING ====================
+            upcoming_matches = [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]
+            for upcoming_pos in upcoming_matches:
+                start_time_match = re.search(r'"startTime":"(\d+)"', html_content[upcoming_pos:upcoming_pos + 1000])
+                if not start_time_match:
+                    continue
+                start_time = start_time_match.group(1)
 
-            segment_before = html_content[max(0, upcoming_pos - 5000):upcoming_pos]
-            segment_vid = html_content[max(0, upcoming_pos - 2000):upcoming_pos]
+                segment_before = html_content[max(0, upcoming_pos - 5000):upcoming_pos]
+                segment_vid = html_content[max(0, upcoming_pos - 2000):upcoming_pos]
 
-            title = ''
-            video_thumbnail = ''
-            video_url = ''
+                title = ''
+                video_thumbnail = ''
+                video_url = ''
 
-            title_search = re.search(
-                r'"title":(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}\]|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})',
-                segment_before, re.DOTALL
-            )
-            if title_search:
-                title = title_search.group(1) or title_search.group(2) or title_search.group(3)
-                if title:
-                    title = title.replace(r'\u0026', '&')
+                title_search = re.search(
+                    r'"title":(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}\]|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})',
+                    segment_before, re.DOTALL
+                )
+                if title_search:
+                    title = title_search.group(1) or title_search.group(2) or title_search.group(3)
+                    if title:
+                        title = title.replace(r'\u0026', '&')
 
-            thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', segment_before, re.DOTALL)
-            if thumbnail_search:
-                video_thumbnail = thumbnail_search.group(1)
-                if video_thumbnail:
-                    video_thumbnail = video_thumbnail.split(r'\u0026')[0].split('&')[0].split('?')[0]
+                thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', segment_before, re.DOTALL)
+                if thumbnail_search:
+                    video_thumbnail = thumbnail_search.group(1)
+                    if video_thumbnail:
+                        video_thumbnail = video_thumbnail.split(r'\u0026')[0].split('&')[0].split('?')[0]
 
-            video_id_search = re.search(r'"videoId":"([A-Za-z0-9_-]+)"', segment_vid, re.DOTALL)
-            if video_id_search:
-                video_url = f"https://www.youtube.com/watch?v={video_id_search.group(1)}"
+                video_id_search = re.search(r'"videoId":"([A-Za-z0-9_-]+)"', segment_vid, re.DOTALL)
+                if video_id_search:
+                    video_url = f"https://www.youtube.com/watch?v={video_id_search.group(1)}"
 
-            if title and video_url:
-                results.append({
-                    "vidUrl": video_url, "vidTitle": title, "vidThumbnail": video_thumbnail,
-                    "startTime": start_time, "chUrl": url, "chTitle": channel_title,
-                    "chThumbnail": ch_thumbnail, "status": "upcoming",
-                    "timestamp": datetime.now().isoformat()
-                })
+                if title and video_url:
+                    results.append({
+                        "vidUrl": video_url, "vidTitle": title, "vidThumbnail": video_thumbnail,
+                        "startTime": start_time, "chUrl": url, "chTitle": channel_title,
+                        "chThumbnail": ch_thumbnail, "status": "upcoming",
+                        "timestamp": datetime.now().isoformat()
+                    })
 
-        # ==================== LIVE ====================
-        live_matches = [m.start() for m in re.finditer(r'"style":"LIVE"', html_content)]
-        for live_pos in live_matches:
-            search_range = html_content[max(0, live_pos - 12000):live_pos]
-            title = ''
-            video_thumbnail = ''
-            video_url = ''
-            viewer_count = 0
+            # ==================== LIVE ====================
+            live_matches = [m.start() for m in re.finditer(r'"style":"LIVE"', html_content)]
+            for live_pos in live_matches:
+                search_range = html_content[max(0, live_pos - 12000):live_pos]
+                title = ''
+                video_thumbnail = ''
+                video_url = ''
+                viewer_count = 0
 
-            title_search = re.search(
-                r'"title":\s*(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}\]|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})',
-                search_range, re.DOTALL
-            )
-            if title_search:
-                title = title_search.group(1) or title_search.group(2) or title_search.group(3)
-                if title:
-                    title = title.replace(r'\u0026', '&')
-
-            thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', search_range, re.DOTALL)
-            if thumbnail_search:
-                video_thumbnail = thumbnail_search.group(1)
-                if video_thumbnail:
-                    video_thumbnail = video_thumbnail.split(r'\u0026')[0].split('&')[0].split('?')[0]
-
-            video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]+)"', search_range)
-            if video_ids:
-                video_id = video_ids[-1]
-                video_url = f"https://www.youtube.com/watch?v={video_id}"
-
-                view_count_search = re.search(
-                    r'"viewCountText":\s*{\s*"runs":\s*\[\s*{\s*"text":\s*"([\d\s ,]+)"\s*},\s*{\s*"text":\s*"[^"]*"\s*}\s*\]',
+                title_search = re.search(
+                    r'"title":\s*(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}\]|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})',
                     search_range, re.DOTALL
                 )
-                if view_count_search:
-                    viewer_count_str = ''.join(filter(str.isdigit, view_count_search.group(1)))
-                    viewer_count = int(viewer_count_str) if viewer_count_str else 0
+                if title_search:
+                    title = title_search.group(1) or title_search.group(2) or title_search.group(3)
+                    if title:
+                        title = title.replace(r'\u0026', '&')
 
-            if title and video_url:
-                results.append({
-                    "vidUrl": video_url, "vidTitle": title, "vidThumbnail": video_thumbnail,
-                    "startTime": str(int(time.time())), "chUrl": url, "chTitle": channel_title,
-                    "chThumbnail": ch_thumbnail, "status": "live",
-                    "viewer_count": viewer_count, "timestamp": datetime.now().isoformat()
-                })
+                thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', search_range, re.DOTALL)
+                if thumbnail_search:
+                    video_thumbnail = thumbnail_search.group(1)
+                    if video_thumbnail:
+                        video_thumbnail = video_thumbnail.split(r'\u0026')[0].split('&')[0].split('?')[0]
 
-        return results
+                video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]+)"', search_range)
+                if video_ids:
+                    video_id = video_ids[-1]
+                    video_url = f"https://www.youtube.com/watch?v={video_id}"
 
-    except Exception:
-        return results
+                    view_count_search = re.search(
+                        r'"viewCountText":\s*{\s*"runs":\s*\[\s*{\s*"text":\s*"([\d\s ,]+)"\s*},\s*{\s*"text":\s*"[^"]*"\s*}\s*\]',
+                        search_range, re.DOTALL
+                    )
+                    if view_count_search:
+                        viewer_count_str = ''.join(filter(str.isdigit, view_count_search.group(1)))
+                        viewer_count = int(viewer_count_str) if viewer_count_str else 0
+
+                if title and video_url:
+                    results.append({
+                        "vidUrl": video_url, "vidTitle": title, "vidThumbnail": video_thumbnail,
+                        "startTime": str(int(time.time())), "chUrl": url, "chTitle": channel_title,
+                        "chThumbnail": ch_thumbnail, "status": "live",
+                        "viewer_count": viewer_count, "timestamp": datetime.now().isoformat()
+                    })
+
+            return results
+
+        except requests.exceptions.Timeout:
+            log_message(f"⏱️ Timeout {channel_title} (tentative {attempt + 1}/2)")
+            if attempt < 1:
+                time.sleep(2)
+                continue
+            return results
+
+        except Exception as e:
+            log_message(f"❌ Error {channel_title}: {type(e).__name__}: {e}")
+            return results
+
+    return results
 
 
 def validate_access_token(access_token):
