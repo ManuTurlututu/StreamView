@@ -12,6 +12,7 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 import gc
 import psutil
+import random
 
 # Forcer l'encodage UTF-8
 sys.stdout.reconfigure(encoding='utf-8')
@@ -73,17 +74,24 @@ def process_url(channel_data, session, access_token):
 
     url = f"https://www.youtube.com/channel/{channel_id}/streams?gl=US&hl=en"
 
+    USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+    ]
+
     for attempt in range(2):
         try:
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+                "User-Agent": random.choice(USER_AGENTS),
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.9",
                 "Referer": "https://www.youtube.com/",
                 "Authorization": f"Bearer {access_token}",
             }
             cookies = {
-                "CONSENT": "YES+cb.20250403-00-p0.fr+FX+123",
+                #"CONSENT": "YES+cb.20250403-00-p0.fr+FX+123",
                 "SOCS": "CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjUwNjAzLjAzX3AwGgJmciACGgYIgJn-wQY",
             }
 
@@ -92,7 +100,12 @@ def process_url(channel_data, session, access_token):
             html_content = response.text
             total_html_size += len(html_content)
 
+            if len(html_content) < 50000:
+                log_message(f"⚠️ Suspicious page {channel_title} ({len(html_content)} bytes)")
+                return results
+
             if any(x in html_content.lower() for x in ["consent.youtube.com", "avant d'accéder", "before you continue"]):
+                log_message(f"⚠️ Consent page detected (cookies check) {channel_title}")
                 return results
 
             # ==================== UPCOMING ====================
@@ -273,12 +286,17 @@ def main():
             for future in as_completed(futures):
                 result = future.result()
                 video_results.extend(result)
-                time.sleep(0.07)
+                time.sleep(random.uniform(0.07, 0.1))
 
-    if not video_results:
-        log_message("❌ Scrapping Failed, DB not updated (anti-flush)")
+    if len(video_results) < 2:
+        log_message(f"❌ Scrapping Failed ({len(video_results)} vids results), DB not updated (anti-flush)")
+        scraper_stats_collection.update_one(
+            {"_id": "last_scraper_run"},
+            {"$set": {"last_fail_timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}},
+            upsert=True
+        )
         log_message(f"=============== END YT Scrapping ===============")
-        log_message("")       
+        log_message("")
         return
 
     # ====================== GESTION INTELLIGENTE DES STATUTS (LIVE → VOD) ======================
@@ -374,13 +392,36 @@ def main():
     live_total = sum(1 for r in video_results if r.get("status") == "live")
     vod_converted_this_run = converted_to_vod
 
-    # ====================== LOGS FINAUX ======================
+# Last Scrap fail format
+
+    last_fail_str = stats.get("last_fail_timestamp") if stats else None
+    if last_fail_str:
+        try:
+            last_fail_dt = datetime.fromisoformat(last_fail_str.replace('Z', '+00:00'))
+            last_fail_local = last_fail_dt.strftime('%d/%m/%y %H:%M UTC')
+            delta_fail = datetime.now(timezone.utc) - last_fail_dt
+            total_seconds = int(delta_fail.total_seconds())
+            if total_seconds < 3600:
+                ago_str = f"{total_seconds // 60}min ago"
+            elif total_seconds < 86400:
+                ago_str = f"{total_seconds // 3600}h ago"
+            else:
+                ago_str = f"{total_seconds // 86400}d ago"
+            last_fail_display = f"{last_fail_local} ({ago_str})"
+        except:
+            last_fail_display = last_fail_str
+    else:
+        last_fail_display = None
+
+# ====================== LOGS FINAUX ======================
     log_message(f"✅ {len(video_results)} YT Vids Saved "
                f"(Upcoming: {upcoming_total} | Live: {live_total} | VOD converted: {vod_converted_this_run})")
     log_message(f"🔥 Peak Ram : {final_peak_mb:.1f} MB")
     log_message(f"📦 Total Download : {total_html_mb:.2f} MB")
     log_message(f"⏱️ Scrap Time : {execution_time:.2f} s")
     log_message(f"📊 Workers : {max_workers}")
+    if last_fail_display:
+        log_message(f"⚠️ Last Scrap Failed : {last_fail_display}")
     log_message(f"=============== END YT Scrapping ===============")
     log_message("")
 
