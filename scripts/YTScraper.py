@@ -30,7 +30,8 @@ try:
     db = client.get_database()
     youtube_channels_collection = db['youtubechannels']
     youtube_videos_collection = db['youtubeVideos']
-    scraper_stats_collection = db['scraperStats']    
+    scraper_stats_collection = db['scraperStats']
+    scraper_config_collection = db['scraperConfig']
 except ConnectionFailure as e:
     print(f"YTSCRAPPER Erreur MongoDB : {e}")
     sys.exit(1)
@@ -40,6 +41,15 @@ def log_message(message):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
     sys.stdout.flush()
 
+# ====================== INIT COOKIES (first run only) ======================
+if not scraper_config_collection.find_one({"_id": "yt_cookies"}):
+    scraper_config_collection.insert_one({
+        "_id": "yt_cookies",
+        "CONSENT": "YES+cb.20250509-00-p0.fr+FX+123",  # ← valeur initiale
+        "SOCS": "CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjUwNjAzLjAzX3AwGgJmciACGgYIgJn-wQY",
+        "updatedAt": datetime.now(timezone.utc).isoformat()
+    })
+    log_message("🍪 Collection scraperConfig initialisée avec cookies par défaut")
 
 # ====================== SUIVI MÉMOIRE ======================
 process = psutil.Process(os.getpid())
@@ -62,7 +72,7 @@ def get_current_peak_mb():
     return max_memory_mb
 
 
-def process_url(channel_data, session, access_token):
+def process_url(channel_data, session, access_token, yt_cookies):
     global total_html_size
     results = []
     channel_id = channel_data.get('channelId', '')
@@ -90,59 +100,78 @@ def process_url(channel_data, session, access_token):
                 "Referer": "https://www.youtube.com/",
                 "Authorization": f"Bearer {access_token}",
             }
-            cookies = {
-                #"CONSENT": "YES+cb.20250403-00-p0.fr+FX+123",
-                "SOCS": "CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjUwNjAzLjAzX3AwGgJmciACGgYIgJn-wQY",
-            }
+
+            cookies = yt_cookies
 
             response = session.get(url, headers=headers, cookies=cookies, timeout=40)
             response.raise_for_status()
             html_content = response.text
             total_html_size += len(html_content)
 
+            # ====================== Debug Html Save ======================
+
+            DEBUG_CHANNEL = "Namie"  # Nom partiel de la chaine cible, vide = première chaine
+            if not getattr(process_url, '_debug_saved', False):
+                if not DEBUG_CHANNEL or DEBUG_CHANNEL.lower() in channel_title.lower():
+                    process_url._debug_saved = True
+                    import pathlib
+                    debug_dir = pathlib.Path(__file__).parent / "debug"
+                    debug_dir.mkdir(exist_ok=True)
+                    with open(debug_dir / "yt_last_page.html", "w", encoding="utf-8") as f:
+                        f.write(html_content)
+
+            # ==============================================================
+
             if len(html_content) < 50000:
                 log_message(f"⚠️ Suspicious page {channel_title} ({len(html_content)} bytes)")
                 return results
 
-            if any(x in html_content.lower() for x in ["consent.youtube.com", "avant d'accéder", "before you continue"]):
-                log_message(f"⚠️ Consent page detected (cookies check) {channel_title}")
+            triggers = [x for x in ["consent.youtube.com", "avant d'accéder", "before you continue"] if x in html_content.lower()]
+            if triggers:
+                log_message(f"⚠️ Consent page detected {channel_title} | trigger: {triggers}")
                 return results
 
-            # ==================== UPCOMING ====================
-            upcoming_matches = [m.start() for m in re.finditer(r'"upcomingEventData"', html_content)]
-            for upcoming_pos in upcoming_matches:
-                start_time_match = re.search(r'"startTime":"(\d+)"', html_content[upcoming_pos:upcoming_pos + 1000])
-                if not start_time_match:
+            # ==================== SCRAPPING : UPCOMING & LIVE  ====================
+
+            def parse_scheduled_date(text):
+                text = text.replace('\u202f', ' ').strip()
+                m = re.search(r'(\d{1,2}/\d{1,2}/\d{2,4}),?\s*(\d{1,2}:\d{2}\s*[AP]M)', text, re.IGNORECASE)
+                if not m:
+                    log_message(f"❌ StartTime noMatch: {repr(text)}")
+                    return '946684800'
+                try:
+                    from zoneinfo import ZoneInfo
+                    dt = datetime.strptime(f'{m.group(1)} {m.group(2).strip()}', '%m/%d/%y %I:%M %p')
+                    dt = dt.replace(tzinfo=ZoneInfo('America/New_York'))
+                    return str(int(dt.timestamp()))
+                except Exception as e:
+                    log_message(f"❌ StartTime parse error: {repr(text)} → {e}")
+                    return '946684800'
+
+            for item_match in re.finditer(r'\{"richItemRenderer":\{"content":', html_content):
+                block = html_content[item_match.start():item_match.start() + 12000]
+
+                badge_search = re.search(r'"text":"(Upcoming|LIVE)"', block)
+                if not badge_search:
                     continue
-                start_time = start_time_match.group(1)
+                badge = badge_search.group(1)
 
-                segment_before = html_content[max(0, upcoming_pos - 5000):upcoming_pos]
-                segment_vid = html_content[max(0, upcoming_pos - 2000):upcoming_pos]
+                vid_search = re.search(r'ytimg\.com/vi/([A-Za-z0-9_-]+)/', block)
+                if not vid_search:
+                    continue
+                video_id = vid_search.group(1)
+                video_url = f"https://www.youtube.com/watch?v={video_id}"
+                video_thumbnail = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
 
-                title = ''
-                video_thumbnail = ''
-                video_url = ''
+                title_search = re.search(r'lockupMetadataViewModel.*?"title":\{"content":"((?:[^"\\]|\\.)*?)"', block, re.DOTALL)
+                title = title_search.group(1).replace(r'\u0026', '&') if title_search else ''
 
-                title_search = re.search(
-                    r'"title":(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}\]|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})',
-                    segment_before, re.DOTALL
-                )
-                if title_search:
-                    title = title_search.group(1) or title_search.group(2) or title_search.group(3)
-                    if title:
-                        title = title.replace(r'\u0026', '&')
+                if not title or not video_url:
+                    continue
 
-                thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', segment_before, re.DOTALL)
-                if thumbnail_search:
-                    video_thumbnail = thumbnail_search.group(1)
-                    if video_thumbnail:
-                        video_thumbnail = video_thumbnail.split(r'\u0026')[0].split('&')[0].split('?')[0]
-
-                video_id_search = re.search(r'"videoId":"([A-Za-z0-9_-]+)"', segment_vid, re.DOTALL)
-                if video_id_search:
-                    video_url = f"https://www.youtube.com/watch?v={video_id_search.group(1)}"
-
-                if title and video_url:
+                if badge == 'Upcoming':
+                    sched_search = re.search(r'Scheduled for ([^"\\]+)', block)
+                    start_time = parse_scheduled_date(sched_search.group(1)) if sched_search else str(int(time.time()))
                     results.append({
                         "vidUrl": video_url, "vidTitle": title, "vidThumbnail": video_thumbnail,
                         "startTime": start_time, "chUrl": url, "chTitle": channel_title,
@@ -150,44 +179,13 @@ def process_url(channel_data, session, access_token):
                         "timestamp": datetime.now().isoformat()
                     })
 
-            # ==================== LIVE ====================
-            live_matches = [m.start() for m in re.finditer(r'"style":"LIVE"', html_content)]
-            for live_pos in live_matches:
-                search_range = html_content[max(0, live_pos - 12000):live_pos]
-                title = ''
-                video_thumbnail = ''
-                video_url = ''
-                viewer_count = 0
-
-                title_search = re.search(
-                    r'"title":\s*(?:{"runs":\[{"text":"((?:[^"\\]|\\.)*?)"\}\]|{"simpleText":"((?:[^"\\]|\\.)*?)"}|{"accessibility":{"accessibilityData":{"label":"((?:[^"\\]|\\.)*?)"}}})',
-                    search_range, re.DOTALL
-                )
-                if title_search:
-                    title = title_search.group(1) or title_search.group(2) or title_search.group(3)
-                    if title:
-                        title = title.replace(r'\u0026', '&')
-
-                thumbnail_search = re.search(r'"thumbnails":\s*\[\s*{"url":"([^"]+)"', search_range, re.DOTALL)
-                if thumbnail_search:
-                    video_thumbnail = thumbnail_search.group(1)
-                    if video_thumbnail:
-                        video_thumbnail = video_thumbnail.split(r'\u0026')[0].split('&')[0].split('?')[0]
-
-                video_ids = re.findall(r'"videoId":"([A-Za-z0-9_-]+)"', search_range)
-                if video_ids:
-                    video_id = video_ids[-1]
-                    video_url = f"https://www.youtube.com/watch?v={video_id}"
-
-                    view_count_search = re.search(
-                        r'"viewCountText":\s*{\s*"runs":\s*\[\s*{\s*"text":\s*"([\d\s ,]+)"\s*},\s*{\s*"text":\s*"[^"]*"\s*}\s*\]',
-                        search_range, re.DOTALL
-                    )
-                    if view_count_search:
-                        viewer_count_str = ''.join(filter(str.isdigit, view_count_search.group(1)))
-                        viewer_count = int(viewer_count_str) if viewer_count_str else 0
-
-                if title and video_url:
+                elif badge == 'LIVE':
+                    viewers_search = re.search(r'"content":"([\d,.]+K?)\s*watching"', block)
+                    if viewers_search:
+                        v = viewers_search.group(1).replace(',', '')
+                        viewer_count = int(float(v.replace('K', '')) * 1000) if 'K' in v else int(v)
+                    else:
+                        viewer_count = 0
                     results.append({
                         "vidUrl": video_url, "vidTitle": title, "vidThumbnail": video_thumbnail,
                         "startTime": str(int(time.time())), "chUrl": url, "chTitle": channel_title,
@@ -275,6 +273,15 @@ def main():
         log_message(f"✅ workers set at : {max_workers}")
         
 
+# ====================== CHARGEMENT COOKIES YT ======================
+    yt_cookies_doc = scraper_config_collection.find_one({"_id": "yt_cookies"})
+    if yt_cookies_doc:
+        yt_cookies = {k: v for k, v in yt_cookies_doc.items() if k not in ("_id", "updatedAt")}
+        log_message(f"🍪 Cookies YT chargés depuis DB (màj: {yt_cookies_doc.get('updatedAt', '?')})")
+    else:
+        yt_cookies = {}
+        log_message(f"⚠️ Aucun cookie YT en DB, requêtes sans cookies")
+
     # ====================== SCRAPING ======================
     channels = list(youtube_channels_collection.find({}))
     log_message(f"📡 {len(channels)} YT Channels Loaded (max_workers = {max_workers})")
@@ -282,7 +289,7 @@ def main():
     video_results = []
     with requests.Session() as session:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(process_url, ch, session, args.access_token): ch for ch in channels}
+            futures = {executor.submit(process_url, ch, session, args.access_token, yt_cookies): ch for ch in channels}
             for future in as_completed(futures):
                 result = future.result()
                 video_results.extend(result)
