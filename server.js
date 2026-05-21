@@ -393,19 +393,53 @@ async function syncTwitchLiveStreams() {
     const existingStreams = await Live.find({ platform: 'twitch' });
     const existingStreamIds = new Set(existingStreams.map(stream => stream.user_id));
 
-    const formattedStreams = followedStreams.data?.map(stream => ({
+    // Résolution des user_name manquants via /helix/users avant de formatter
+    const streamsRaw = followedStreams.data || [];
+    const missingNameIds = streamsRaw
+      .filter(s => !s.user_name || s.user_name.trim() === '')
+      .map(s => s.user_id);
+
+    if (missingNameIds.length > 0) {
+      console.log(`[${new Date().toISOString()}]⚠️ ${missingNameIds.length} stream(s) avec user_name manquant, appel /helix/users...`);
+      try {
+        const userRes = await axios.get(
+          `https://api.twitch.tv/helix/users?${missingNameIds.map(id => `id=${id}`).join('&')}`,
+          { headers: { "Client-ID": process.env.TWITCH_CLIENT_ID, Authorization: `Bearer ${twitchAccessToken}` } }
+        );
+        userRes.data.data.forEach(user => {
+          const s = streamsRaw.find(s => s.user_id === user.id);
+          if (s) {
+            s.user_name = s.user_name || user.display_name || user.login;
+            s.user_login = s.user_login || user.login;
+            profiles[user.id] = profiles[user.id] || user.profile_image_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png';
+          }
+        });
+      } catch (err) {
+        console.error(`[${new Date().toISOString()}]❌ Échec résolution user_name manquants:`, err.message);
+      }
+    }
+
+    // Streams dont le user_name est toujours manquant après la tentative de résolution → on les skip
+    const unresolved = streamsRaw.filter(s => !s.user_name || s.user_name.trim() === '');
+    if (unresolved.length > 0) {
+      console.log(`[${new Date().toISOString()}]⏭️ Skip ${unresolved.length} stream(s) non résolus (sera réessayé au prochain cycle):`, unresolved.map(s => s.user_id));
+    }
+    const resolvedStreams = streamsRaw.filter(s => s.user_name && s.user_name.trim() !== '');
+
+    const formattedStreams = resolvedStreams.map(stream => ({
       platform: 'twitch',
       user_id: stream.user_id,
-      user_name: stream.user_name || 'Inconnu',
+      user_name: stream.user_name,
+      user_login: stream.user_login || stream.user_name.toLowerCase(),
       title: stream.title || 'Aucun titre',
       thumbnail_url: stream.thumbnail_url || 'https://static-cdn.jtvnw.net/ttv-static/404_preview.jpg',
       avatar_url: profiles[stream.user_id] || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png',
       viewer_count: stream.viewer_count || 0,
       started_at: new Date(stream.started_at).getTime(),
       game_name: stream.game_name || 'Inconnu',
-      stream_url: `https://www.twitch.tv/${stream.user_name.toLowerCase()}`,
+      stream_url: `https://www.twitch.tv/${stream.user_login || stream.user_name.toLowerCase()}`,
       timestamp: Date.now()
-    })) || [];
+    }));
 
     // Détecter les nouveaux streams
     const newStreams = formattedStreams.filter(stream => !existingStreamIds.has(stream.user_id));
@@ -958,7 +992,14 @@ async function runPythonScript(accessToken, retryCount = 0) {
     }
 
     const scriptPath = path.join(__dirname, "scripts", "YTScraper.py");
-    const command = `python ${scriptPath} --access-token ${accessToken}`;
+    const getPythonCmd = async () => {
+      for (const cmd of ["python3", "python", "py"]) {
+        try { await execPromise(`${cmd} --version`); return cmd; } catch {}
+      }
+      throw new Error("Python introuvable. Installe Python et assure-toi qu'il est dans ton PATH.");
+    };
+    const pythonCmd = await getPythonCmd();
+    const command = `${pythonCmd} ${scriptPath} --access-token ${accessToken}`;
 
     const startTime = Date.now();
 
