@@ -943,7 +943,7 @@ function createNotificationCard(notification) {
   if (notification.platform === "youtube") {
     link = notification.vidUrl || notification.stream_url || "#";
   } else if (notification.platform === "twitch") {
-    link = notification.stream_url || `https://www.twitch.tv/${notification.user_name?.toLowerCase()}`;
+    link = notification.stream_url || `https://www.twitch.tv/${notification.user_login || notification.user_name?.toLowerCase()}`;
   } else if (notification.stream_url) {
     link = notification.stream_url;
   }
@@ -1162,15 +1162,15 @@ function listenToNotifications() {
           title: notification.title,
           avatar_url: notification.avatar_url,
           platform: notification.platform,
-          stream_url: notification.stream_url || (notification.platform === 'youtube' ? notification.vidUrl : `https://www.twitch.tv/${notification.user_name?.toLowerCase()}`),
+          stream_url: notification.stream_url || (notification.platform === 'youtube' ? notification.vidUrl : `https://www.twitch.tv/${notification.user_login || notification.user_name?.toLowerCase()}`),
           timestamp: notification.timestamp
         });
 
         const alKey = `${notification.platform}_${notification.user_id}`;
         if (autoLaunchSettings.get(alKey)) {
-          const url = notification.platform === 'youtube' 
-            ? (notification.vidUrl || notification.stream_url)
-            : `https://www.twitch.tv/${notification.user_name?.toLowerCase()}`;
+          const url = notification.stream_url || (notification.platform === 'youtube' 
+            ? notification.vidUrl 
+            : `https://www.twitch.tv/${notification.user_login || notification.user_name?.toLowerCase()}`);
           console.log(`[AutoLaunch] Ouverture → ${url}`);
           window.open(url, '_blank');
         }       
@@ -1253,7 +1253,7 @@ function displayNotificationHTML(stream) {
             vidUrl: stream.vidUrl || (stream.platform === 'youtube' ? stream.stream_url : null),
             stream_url: stream.stream_url || 
                         (stream.platform === 'youtube' ? (stream.vidUrl || stream.stream_url) : 
-                        `https://www.twitch.tv/${stream.user_name?.toLowerCase()}`),
+                        `https://www.twitch.tv/${stream.user_login || stream.user_name?.toLowerCase()}`),
             timestamp: stream.timestamp || Date.now()
         };
 
@@ -1300,7 +1300,7 @@ async function trySendBrowserNotification(stream) {
 
         notification.onclick = () => {
             const url = stream.stream_url || 
-                       (stream.platform === 'youtube' ? stream.vidUrl : `https://www.twitch.tv/${stream.user_name.toLowerCase()}`);
+                       (stream.platform === 'youtube' ? stream.vidUrl : `https://www.twitch.tv/${stream.user_login || stream.user_name.toLowerCase()}`);
             window.open(url, "_blank");
             notification.close();
         };
@@ -1420,12 +1420,13 @@ function createTwitchLiveCard(stream, avatarUrl) {
   const safeTitle = (stream.title || '').replace(/"/g, '&quot;');
   const safeUserName = (stream.user_name || '').replace(/"/g, '&quot;');
   const safeGameName = (stream.game_name || '').replace(/"/g, '&quot;');
+  const twitchUrl = stream.stream_url || `https://www.twitch.tv/${stream.user_login || stream.user_name.toLowerCase()}`;
   const card = document.createElement("div");
   card.className = `item-container twitch-border`;
   card.setAttribute('data-user-id', stream.user_id);
   card.innerHTML = `
     <div class="header-row">
-      <a href="https://www.twitch.tv/${stream.user_name.toLowerCase()}" target="_blank">
+      <a href="${twitchUrl}" target="_blank">
         <img src="${stream.avatar_url || 'https://static-cdn.jtvnw.net/user-default-pictures-uv/ead5c8b2-5b63-11e9-846d-3629493f349c-profile_image-70x70.png'}" alt="${safeUserName}" class="channel-img">
       </a>
       <div class="channel-info">
@@ -1435,7 +1436,7 @@ function createTwitchLiveCard(stream, avatarUrl) {
         <p class="stream-duration">Démarré il y a <span class="duration-time" data-started-at="${stream.started_at}"></span></p>
       </div>
     </div>
-    <a href="https://www.twitch.tv/${stream.user_name.toLowerCase()}" target="_blank">
+    <a href="${twitchUrl}" target="_blank">
       <img src="${stream.thumbnail_url ? stream.thumbnail_url.replace('{width}', '1280').replace('{height}', '720') : 'https://static-cdn.jtvnw.net/ttv-static/404_preview-1280x720.jpg'}" alt="${safeUserName} thumbnail" class="thumbnail">
     </a>
     <p class="stream-title" title="${safeTitle}">${truncatedTitle}</p>
