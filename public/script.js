@@ -228,6 +228,31 @@ document.addEventListener("DOMContentLoaded", () => {
       stopDurationUpdates();
     }
   });
+
+  // ==================== LOGOUT API (admin) ====================
+  const logoutBtn = document.getElementById("logout-api-button");
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      const key = prompt("Clé admin :");
+      if (!key) return;
+      try {
+        const response = await fetch("/logout-api", {
+          method: "POST",
+          headers: { "x-admin-key": key },
+        });
+        if (response.ok) {
+          currentTwitchToken = null;
+          currentYoutubeToken = null;
+          window.location.href = "/";
+        } else {
+          alert("Accès refusé");
+        }
+      } catch (error) {
+        console.error("Erreur logout :", error);
+        alert("Erreur réseau");
+      }
+    });
+  }
 });
 
 async function getTwitchAccessToken() {
