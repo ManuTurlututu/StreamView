@@ -10,6 +10,7 @@ const rateLimit = require("express-rate-limit");
 const execPromise = util.promisify(exec);
 const { EventEmitter } = require('events');
 const mongoose = require('mongoose');
+const crypto = require("crypto");
 
 const notificationEmitter = new EventEmitter();
 const app = express();
@@ -1402,16 +1403,28 @@ app.get("/get-live-streams", async (req, res) => {
   }
 });
 
+function requireAdmin(req, res, next) {
+  const provided = req.get("x-admin-key") || "";
+  const expected = process.env.ADMIN_PASSWORD || "";
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (!expected || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    console.warn(`[${new Date().toISOString()}] 🚫 Tentative logout refusée, IP: ${req.ip}`);
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  next();
+}
+
 // Endpoint pour déconnexion
-app.get("/logout-api", async (req, res) => {
+app.post("/logout-api", requireAdmin, async (req, res) => {
   twitchAccessToken = null;
   twitchRefreshToken = null;
   youtubeAccessToken = null;
   youtubeRefreshToken = null;
   await saveTwitchTokens();
   await saveYoutubeTokens();
-  console.log(`[${new Date().toISOString()}] Déconnexion API: tous les jetons réinitialisés`);
-  res.redirect("/");
+  console.log(`[${new Date().toISOString()}] Déconnexion API: tous les jetons réinitialisés (IP: ${req.ip})`);
+  res.json({ ok: true });
 });
 
 // ====================== CRONS (UNIFIÉS) ======================
